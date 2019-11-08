@@ -43,6 +43,14 @@ func (r *PaymentRequest) Marshal() (string, error) {
 	return string(b), nil
 }
 
+func (r *Order) Marshal() (string, error) {
+	b, err := json.Marshal(r)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 func UnmarshalOrder(data string) (Order, error) {
 	var r Order
 	err := json.Unmarshal([]byte(data), &r)
@@ -120,29 +128,39 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		response.Body = errormessage
 		return response, err
 	}
+	order.OrderID = orderID
+
+	orderPL, err := order.Marshal()
+	if err != nil {
+		errormessage := fmt.Sprintf("error marshalling order: %s", err.Error())
+		log.Println(errormessage)
+		response.StatusCode = http.StatusInternalServerError
+		response.Body = errormessage
+		return response, err
+	}
 
 	// Create a map of DynamoDB Attribute Values containing the table keys
 	km := make(map[string]*dynamodb.AttributeValue)
 	km["ID"] = &dynamodb.AttributeValue{
 		S: aws.String(orderID),
 	}
-	km["User"] = &dynamodb.AttributeValue{
-		S: aws.String(userID),
-	}
 
 	em := make(map[string]*dynamodb.AttributeValue)
 	em[":content"] = &dynamodb.AttributeValue{
-		S: aws.String(request.Body),
+		S: aws.String(orderPL),
 	}
 	em[":status"] = &dynamodb.AttributeValue{
 		S: aws.String("pending payment"),
+	}
+	em[":user"] = &dynamodb.AttributeValue{
+		S: aws.String(userID),
 	}
 
 	uii := &dynamodb.UpdateItemInput{
 		TableName:                 aws.String(c.DynamoDBTable),
 		Key:                       km,
 		ExpressionAttributeValues: em,
-		UpdateExpression:          aws.String("SET OrderStatus = :orderstatus, OrderString = :orderstring"),
+		UpdateExpression:          aws.String("SET OrderStatus = :status, OrderString = :content, UserID = :user"),
 	}
 
 	_, err = dbs.UpdateItem(uii)

@@ -65,12 +65,12 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	orders := make(Orders, len(so.Items))
 
 	for idx, order := range so.Items {
-		str := order["Content"].S
+		str := order["OrderString"].S
 		o, err := UnmarshalOrder(*str)
 		if err != nil {
 			fmt.Println(err.Error())
 		}
-		o.Status = order["Status"].S
+		o.Status = order["OrderStatus"].S
 		orders[idx] = o
 	}
 

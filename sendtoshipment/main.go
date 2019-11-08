@@ -87,7 +87,8 @@ func handler(request events.SQSEvent) error {
 			TableName:                 aws.String(c.DynamoDBTable),
 			Key:                       km,
 			ExpressionAttributeValues: em,
-			UpdateExpression:          aws.String("SET Status = :status"),
+			UpdateExpression:          aws.String("SET OrderStatus = :status"),
+			ReturnValues:              aws.String("ALL_NEW"),
 		}
 
 		uio, err := dbs.UpdateItem(uii)
@@ -99,7 +100,7 @@ func handler(request events.SQSEvent) error {
 		if msg.Success {
 			sendMessageInput := &sqs.SendMessageInput{
 				QueueUrl:    aws.String(c.ShippingQueue),
-				MessageBody: uio.Attributes["Content"].S,
+				MessageBody: uio.Attributes["OrderString"].S,
 			}
 
 			_, err = sqsService.SendMessage(sendMessageInput)

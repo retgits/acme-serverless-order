@@ -52,14 +52,14 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 	// Create a map of DynamoDB Attribute Values containing the table keys
 	km := make(map[string]*dynamodb.AttributeValue)
-	km["User"] = &dynamodb.AttributeValue{
+	km[":userid"] = &dynamodb.AttributeValue{
 		S: aws.String(userID),
 	}
 
 	si := &dynamodb.ScanInput{
-		TableName: aws.String(c.DynamoDBTable),
+		TableName:                 aws.String(c.DynamoDBTable),
 		ExpressionAttributeValues: km,
-		FilterExpression: aws.String("User = :userid"),
+		FilterExpression:          aws.String("UserID = :userid"),
 	}
 
 	so, err := dbs.Scan(si)

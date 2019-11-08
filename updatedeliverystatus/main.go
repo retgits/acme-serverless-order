@@ -60,6 +60,8 @@ func handler(request events.SQSEvent) error {
 			break
 		}
 
+		log.Printf("%+v", msg)
+
 		// Create a map of DynamoDB Attribute Values containing the table keys
 		km := make(map[string]*dynamodb.AttributeValue)
 		km["ID"] = &dynamodb.AttributeValue{
@@ -75,7 +77,7 @@ func handler(request events.SQSEvent) error {
 			TableName:                 aws.String(c.DynamoDBTable),
 			Key:                       km,
 			ExpressionAttributeValues: em,
-			UpdateExpression:          aws.String("SET Status = :status"),
+			UpdateExpression:          aws.String("SET OrderStatus = :status"),
 		}
 
 		_, err = dbs.UpdateItem(uii)
