@@ -1,0 +1,244 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  The Order service is part of the ACME Serverless Shop. The goal of this specific service is to interact with the catalog, front-end, and make calls to the order services.
+
+Globals:
+  Function:
+    Timeout: 5
+  Environment:
+    Variables:
+      REGION: !Ref AWS::Region
+      WAVEFRONT_ENABLED: true
+      WAVEFRONT_URL: !Ref WavefrontURL
+      WAVEFRONT_API_TOKEN: !Ref WavefrontToken
+
+Parameters:
+  Version:
+    Type: String
+  User:
+    Type: String
+  Team:
+    Type: String
+  Feature:
+    Type: String
+    Default: acme-serverless
+  ShipmentInboundQueue:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dev/acmeserverless/shipment/inboundqueue
+  ShipmentOutboundQueue:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dev/acmeserverless/shipment/outboundqueue
+  PaymentInboundQueue:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dev/acmeserverless/payment/inboundqueue
+  PaymentOutboundQueue:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dev/acmeserverless/payment/outboundqueue
+  DynamoDBTable:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dev/acmeserverless/dynamodb/ordertable
+  WavefrontURL:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dev/acmeserverless/wavefront/url
+  WavefrontToken:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dev/acmeserverless/wavefront/token
+  LambdaEncryptionKeyID:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: The ID of the KMS key used to decrypt environment variables.
+
+Resources:
+  AddOrder:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: addorder
+      Runtime: go1.x
+      CodeUri: bin/
+      FunctionName: Order
+      Description: A Lambda function to add orders to DynamoDB
+      MemorySize: 256
+      Timeout: 10
+      Policies:
+        - AWSLambdaRole
+        - AWSLambdaSQSQueueExecutionRole
+        - KMSDecryptPolicy:
+            KeyId: !Ref LambdaEncryptionKeyID
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTable
+      Environment:
+        Variables:
+          TABLENAME: !Ref DynamoDBTable
+          PAYMENT_QUEUE: !Sub
+            - arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${PaymentInboundQueue}
+            - { PaymentInboundQueue: !Ref PaymentInboundQueue }
+      Events:
+        AddOrderAPI:
+          Type: Api
+          Properties:
+            Path: /order/{userid}
+            Method: POST
+      Tags:
+        version: !Ref Version
+        author: !Ref User
+        team: !Ref Team
+        feature: !Ref Feature
+        region: !Ref AWS::Region
+      VersionDescription: !Ref Version
+  GetAllOrders:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: getallorders
+      Runtime: go1.x
+      CodeUri: bin/
+      FunctionName: Order
+      Description: A Lambda function to get all orders from DynamoDB
+      MemorySize: 256
+      Timeout: 10
+      Policies:
+        - AWSLambdaRole
+        - AWSLambdaSQSQueueExecutionRole
+        - KMSDecryptPolicy:
+            KeyId: !Ref LambdaEncryptionKeyID
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTable
+      Environment:
+        Variables:
+          TABLENAME: !Ref DynamoDBTable
+      Events:
+        AddOrderAPI:
+          Type: Api
+          Properties:
+            Path: /order/all
+            Method: GET
+      Tags:
+        version: !Ref Version
+        author: !Ref User
+        team: !Ref Team
+        feature: !Ref Feature
+        region: !Ref AWS::Region
+      VersionDescription: !Ref Version
+  GetOrdersByUser:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: getordersbyuser
+      Runtime: go1.x
+      CodeUri: bin/
+      FunctionName: Order
+      Description: A Lambda function to get orders from DynamoDB based on the userID
+      MemorySize: 256
+      Timeout: 10
+      Policies:
+        - AWSLambdaRole
+        - AWSLambdaSQSQueueExecutionRole
+        - KMSDecryptPolicy:
+            KeyId: !Ref LambdaEncryptionKeyID
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTable
+      Environment:
+        Variables:
+          TABLENAME: !Ref DynamoDBTable
+      Events:
+        AddOrderAPI:
+          Type: Api
+          Properties:
+            Path: /order/{userid}
+            Method: GET
+      Tags:
+        version: !Ref Version
+        author: !Ref User
+        team: !Ref Team
+        feature: !Ref Feature
+        region: !Ref AWS::Region
+      VersionDescription: !Ref Version
+  SendOrderToShipment:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: sendtoshipment
+      Runtime: go1.x
+      CodeUri: bin/
+      FunctionName: Order
+      Description: A Lambda function to send orders to the shipment service
+      MemorySize: 256
+      Timeout: 10
+      Policies:
+        - AWSLambdaRole
+        - AWSLambdaSQSQueueExecutionRole
+        - KMSDecryptPolicy:
+            KeyId: !Ref LambdaEncryptionKeyID
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTable
+        - SQSSendMessagePolicy:
+            QueueName: !Ref ShipmentInboundQueue
+      Environment:
+        Variables:
+          TABLENAME: !Ref DynamoDBTable
+          SHIPPING_QUEUE: !Sub
+            - https://sqs.us-west-2.amazonaws.com/${AWS::AccountId}/${ShipmentInboundQueue}
+            - { ShipmentInboundQueue: !Ref ShipmentInboundQueue }
+      Events:
+        SendToShipment:
+          Type: SQS
+          Properties:
+            Queue: !Sub
+              - arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${PaymentOutboundQueue}
+              - { PaymentOutboundQueue: !Ref PaymentOutboundQueue }
+            BatchSize: 1
+            Enabled: true
+      Tags:
+        version: !Ref Version
+        author: !Ref User
+        team: !Ref Team
+        feature: !Ref Feature
+        region: !Ref AWS::Region
+      VersionDescription: !Ref Version
+  UpdateDeliveryStatus:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: updatedeliverystatus
+      Runtime: go1.x
+      CodeUri: bin/
+      FunctionName: Order
+      Description: A Lambda function to update the delivery status in DynamoDB
+      MemorySize: 256
+      Timeout: 10
+      Policies:
+        - AWSLambdaRole
+        - AWSLambdaSQSQueueExecutionRole
+        - KMSDecryptPolicy:
+            KeyId: !Ref LambdaEncryptionKeyID
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DynamoDBTable
+      Environment:
+        Variables:
+          TABLENAME: !Ref DynamoDBTable
+      Events:
+        SendToShipment:
+          Type: SQS
+          Properties:
+            Queue: !Sub
+              - arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ShipmentOutboundQueue}
+              - { ShipmentOutboundQueue: !Ref ShipmentOutboundQueue }
+            BatchSize: 1
+            Enabled: true
+      Tags:
+        version: !Ref Version
+        author: !Ref User
+        team: !Ref Team
+        feature: !Ref Feature
+        region: !Ref AWS::Region
+      VersionDescription: !Ref Version
+
+Outputs:
+  AddOrderARN:
+    Description: ARN for the AddOrder function
+    Value: !GetAtt AddOrder.Arn
+  GetAllOrdersARN:
+    Description: ARN for the GetAllOrders function
+    Value: !GetAtt GetAllOrders.Arn
+  GetOrdersByUserARN:
+    Description: ARN for the GetOrdersByUser function
+    Value: !GetAtt GetOrdersByUser.Arn
+  SendOrderToShipmentARN:
+    Description: ARN for the SendOrderToShipment function
+    Value: !GetAtt SendOrderToShipment.Arn
