@@ -44,8 +44,8 @@ Resources:
         - AttributeName: "ID"
           KeyType: "HASH"
       ProvisionedThroughput: 
-        ReadCapacityUnits: "5"
-        WriteCapacityUnits: "5"
+        ReadCapacityUnits: "10"
+        WriteCapacityUnits: "10"
       TableName: "Order"
       GlobalSecondaryIndexes: 
         - IndexName: "User"
