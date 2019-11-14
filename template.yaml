@@ -3,16 +3,6 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   The Order service is part of the ACME Serverless Shop. The goal of this specific service is to interact with the catalog, front-end, and make calls to the order services.
 
-Globals:
-  Function:
-    Timeout: 5
-    Environment:
-      Variables:
-        REGION: !Ref AWS::Region
-        WAVEFRONT_ENABLED: true
-        WAVEFRONT_URL: !Ref WavefrontURL
-        WAVEFRONT_API_TOKEN: !Ref WavefrontToken
-
 Parameters:
   Version:
     Type: String
@@ -27,26 +17,22 @@ Parameters:
     Type: String
     Default: dev
   WavefrontURL:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /dev/acmeserverless/wavefront/url
+    Type: String
   WavefrontToken:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /dev/acmeserverless/wavefront/token
-  PaymentInboundQueue:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /dev/acmeserverless/payment/payment-inboundqueue
-  PaymentOutboundQueue:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /dev/acmeserverless/payment/payment-outboundqueue
-  ShipmentInboundQueue:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /dev/acmeserverless/shipment/shipment-inboundqueue
-  ShipmentOutboundQueue:
-    Type: AWS::SSM::Parameter::Value<String>
-    Default: /dev/acmeserverless/shipment/shipment-outboundqueue
+    Type: String
+
+Globals:
+  Function:
+    Timeout: 5
+    Environment:
+      Variables:
+        REGION: !Ref AWS::Region
+        WAVEFRONT_ENABLED: true
+        WAVEFRONT_URL: !Ref WavefrontURL
+        WAVEFRONT_API_TOKEN: !Ref WavefrontToken
 
 Resources:
-  OrdersTable: 
+  OrderTable: 
     Type: AWS::DynamoDB::Table
     Properties: 
       AttributeDefinitions: 
@@ -60,7 +46,7 @@ Resources:
       ProvisionedThroughput: 
         ReadCapacityUnits: "5"
         WriteCapacityUnits: "5"
-      TableName: "Orders"
+      TableName: "Order"
       GlobalSecondaryIndexes: 
         - IndexName: "User"
           KeySchema: 
@@ -69,15 +55,15 @@ Resources:
           Projection: 
             ProjectionType: "ALL"
           ProvisionedThroughput: 
-            ReadCapacityUnits: "5"
-            WriteCapacityUnits: "5"
-  AddOrder:
+            ReadCapacityUnits: "10"
+            WriteCapacityUnits: "10"
+  Add:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: addorder
+      Handler: add
       Runtime: go1.x
       CodeUri: bin/
-      FunctionName: AddOrder
+      FunctionName: Add
       Description: A Lambda function to add orders to DynamoDB
       MemorySize: 256
       Timeout: 10
@@ -85,15 +71,15 @@ Resources:
         - AWSLambdaRole
         - AWSLambdaSQSQueueExecutionRole
         - SQSSendMessagePolicy:
-            QueueName: !Ref PaymentInboundQueue
+            QueueName: !Sub '${Stage}-${Feature}-payment-inbound'
         - DynamoDBCrudPolicy:
-            TableName: !Ref OrdersTable
+            TableName: !Ref OrderTable
       Environment:
         Variables:
-          TABLENAME: !Ref OrdersTable
-          PAYMENT_QUEUE: !Sub 'https://sqs.us-west-2.amazonaws.com/${AWS::AccountId}/${PaymentInboundQueue}'
+          TABLENAME: !Ref OrderTable
+          PAYMENT_QUEUE: !Sub 'https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${Stage}-${Feature}-payment-inbound'
       Events:
-        AddOrderAPI:
+        AddAPI:
           Type: Api
           Properties:
             Path: /order/add/{userid}
@@ -105,13 +91,13 @@ Resources:
         feature: !Ref Feature
         region: !Ref AWS::Region
       VersionDescription: !Ref Version
-  SendOrderToShipment:
+  Ship:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: sendtoshipment
+      Handler: ship
       Runtime: go1.x
       CodeUri: bin/
-      FunctionName: SendOrderToShipment
+      FunctionName: Ship
       Description: A Lambda function to send orders to the shipment service
       MemorySize: 256
       Timeout: 10
@@ -119,18 +105,18 @@ Resources:
         - AWSLambdaRole
         - AWSLambdaSQSQueueExecutionRole
         - DynamoDBCrudPolicy:
-            TableName: !Ref OrdersTable
+            TableName: !Ref OrderTable
         - SQSSendMessagePolicy:
-            QueueName: !Ref ShipmentInboundQueue
+            QueueName: !Sub '${Stage}-${Feature}-shipment-inbound'
       Environment:
         Variables:
-          TABLENAME: !Ref OrdersTable
-          SHIPPING_QUEUE: !Sub 'https://sqs.us-west-2.amazonaws.com/${AWS::AccountId}/${ShipmentInboundQueue}'
+          TABLENAME: !Ref OrderTable
+          SHIPPING_QUEUE: !Sub 'https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${Stage}-${Feature}-shipment-inbound'
       Events:
         SendToShipment:
           Type: SQS
           Properties:
-            Queue: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${PaymentOutboundQueue}'
+            Queue: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${Stage}-${Feature}-payment-outbound'
             BatchSize: 1
             Enabled: true
       Tags:
@@ -140,13 +126,13 @@ Resources:
         feature: !Ref Feature
         region: !Ref AWS::Region
       VersionDescription: !Ref Version
-  UpdateDeliveryStatus:
+  UpdateStatus:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: updatedeliverystatus
+      Handler: updatestatus
       Runtime: go1.x
       CodeUri: bin/
-      FunctionName: UpdateDeliveryStatus
+      FunctionName: UpdateStatus
       Description: A Lambda function to update the delivery status in DynamoDB
       MemorySize: 256
       Timeout: 10
@@ -154,15 +140,15 @@ Resources:
         - AWSLambdaRole
         - AWSLambdaSQSQueueExecutionRole
         - DynamoDBCrudPolicy:
-            TableName: !Ref OrdersTable
+            TableName: !Ref OrderTable
       Environment:
         Variables:
-          TABLENAME: !Ref OrdersTable
+          TABLENAME: !Ref OrderTable
       Events:
         UpdateStatus:
           Type: SQS
           Properties:
-            Queue: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${ShipmentOutboundQueue}'
+            Queue: !Sub 'arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${Stage}-${Feature}-shipment-outbound'
             BatchSize: 1
             Enabled: true
       Tags:
@@ -172,13 +158,13 @@ Resources:
         feature: !Ref Feature
         region: !Ref AWS::Region
       VersionDescription: !Ref Version
-  GetAllOrders:
+  AllOrders:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: getallorders
+      Handler: allorders
       Runtime: go1.x
       CodeUri: bin/
-      FunctionName: GetAllOrders
+      FunctionName: AllOrders
       Description: A Lambda function to get all orders from DynamoDB
       MemorySize: 256
       Timeout: 10
@@ -186,10 +172,10 @@ Resources:
         - AWSLambdaRole
         - AWSLambdaSQSQueueExecutionRole
         - DynamoDBCrudPolicy:
-            TableName: !Ref OrdersTable
+            TableName: !Ref OrderTable
       Environment:
         Variables:
-          TABLENAME: !Ref OrdersTable
+          TABLENAME: !Ref OrderTable
       Events:
         GetAllOrdersAPI:
           Type: Api
@@ -203,13 +189,13 @@ Resources:
         feature: !Ref Feature
         region: !Ref AWS::Region
       VersionDescription: !Ref Version
-  GetOrdersByUser:
+  UserOrders:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: getordersbyuser
+      Handler: userorders
       Runtime: go1.x
       CodeUri: bin/
-      FunctionName: GetOrdersByUser
+      FunctionName: UserOrders
       Description: A Lambda function to get orders from DynamoDB based on the userID
       MemorySize: 256
       Timeout: 10
@@ -217,10 +203,10 @@ Resources:
         - AWSLambdaRole
         - AWSLambdaSQSQueueExecutionRole
         - DynamoDBCrudPolicy:
-            TableName: !Ref OrdersTable
+            TableName: !Ref OrderTable
       Environment:
         Variables:
-          TABLENAME: !Ref OrdersTable
+          TABLENAME: !Ref OrderTable
       Events:
         GetOrdersByUserAPI:
           Type: Api
@@ -235,21 +221,21 @@ Resources:
         region: !Ref AWS::Region
       VersionDescription: !Ref Version
 Outputs:
-  OrdersTableARN:
-    Description: ARN for the Orders DynamoDB Table
-    Value: !GetAtt OrdersTable.Arn
-  AddOrderURL:
-    Description: "API Gateway endpoint URL for Prod environment for AddOrder"
+  OrderTableARN:
+    Description: ARN for the Order DynamoDB Table
+    Value: !GetAtt OrderTable.Arn
+  AddURL:
+    Description: "API Gateway endpoint URL to add orders"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/order/add/{userid}"
-  GetAllOrdersURL:
-    Description: "API Gateway endpoint URL for Prod environment for GetAllOrders"
+  ShipARN:
+    Description: ARN for the Ship function
+    Value: !GetAtt Ship.Arn
+  UpdateStatusARN:
+    Description: ARN for the UpdateStatus function
+    Value: !GetAtt UpdateStatus.Arn
+  AllOrdersURL:
+    Description: "API Gateway endpoint URL to get all orders"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/order/all"
-  GetOrdersByUserURL:
-    Description: "API Gateway endpoint URL for Prod environment for GetAllOrders"
+  UserOrdersURL:
+    Description: "API Gateway endpoint URL to get all orders for a user"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/order/{userid}"
-  SendOrderToShipmentARN:
-    Description: ARN for the SendOrderToShipment function
-    Value: !GetAtt SendOrderToShipment.Arn
-  UpdateDeliveryStatusARN:
-    Description: ARN for the UpdateDeliveryStatus function
-    Value: !GetAtt UpdateDeliveryStatus.Arn

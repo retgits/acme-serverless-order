@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -9,7 +8,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/kelseyhightower/envconfig"
+	"github.com/retgits/order"
 
 	wflambda "github.com/wavefronthq/wavefront-lambda-go"
 )
@@ -20,19 +21,7 @@ var wfAgent = wflambda.NewWavefrontAgent(&wflambda.WavefrontConfig{})
 type config struct {
 	AWSRegion     string `required:"true" split_words:"true" envconfig:"REGION"`
 	DynamoDBTable string `required:"true" split_words:"true" envconfig:"TABLENAME"`
-}
-
-type Shipment struct {
-	TrackingNumber string `json:"trackingNumber"`
-	OrderNumber    string `json:"orderNumber"`
-	Status         string `json:"status"`
-}
-
-// UnmarshalShipment takes a byte array and turns that into a Shipment
-func UnmarshalShipment(data []byte) (Shipment, error) {
-	var r Shipment
-	err := json.Unmarshal(data, &r)
-	return r, err
+	ShippingQueue string `required:"true" split_words:"true" envconfig:"SHIPPING_QUEUE"`
 }
 
 var c config
@@ -50,27 +39,32 @@ func handler(request events.SQSEvent) error {
 		Region: aws.String(c.AWSRegion),
 	}))
 
+	// Create a SQS session
+	sqsService := sqs.New(awsSession)
 	// Create a DynamoDB session
 	dbs := dynamodb.New(awsSession)
 
 	for _, record := range request.Records {
-		msg, err := UnmarshalShipment([]byte(record.Body))
+		msg, err := order.UnmarshalPaymentResponse([]byte(record.Body))
 		if err != nil {
 			log.Printf("error unmarshaling request: %s", err.Error())
 			break
 		}
 
-		log.Printf("%+v", msg)
-
 		// Create a map of DynamoDB Attribute Values containing the table keys
 		km := make(map[string]*dynamodb.AttributeValue)
 		km["ID"] = &dynamodb.AttributeValue{
-			S: aws.String(msg.OrderNumber),
+			S: aws.String(msg.OrderID),
+		}
+
+		status := "payment successful - pending shipment"
+		if !msg.Success {
+			status = msg.Message
 		}
 
 		em := make(map[string]*dynamodb.AttributeValue)
 		em[":status"] = &dynamodb.AttributeValue{
-			S: aws.String(msg.Status),
+			S: aws.String(status),
 		}
 
 		uii := &dynamodb.UpdateItemInput{
@@ -78,12 +72,26 @@ func handler(request events.SQSEvent) error {
 			Key:                       km,
 			ExpressionAttributeValues: em,
 			UpdateExpression:          aws.String("SET OrderStatus = :status"),
+			ReturnValues:              aws.String("ALL_NEW"),
 		}
 
-		_, err = dbs.UpdateItem(uii)
+		uio, err := dbs.UpdateItem(uii)
 		if err != nil {
 			log.Printf("error updating dynamodb: %s", err.Error())
 			return err
+		}
+
+		if msg.Success {
+			sendMessageInput := &sqs.SendMessageInput{
+				QueueUrl:    aws.String(c.ShippingQueue),
+				MessageBody: uio.Attributes["OrderString"].S,
+			}
+
+			_, err = sqsService.SendMessage(sendMessageInput)
+			if err != nil {
+				log.Printf("error while sending response message: %s", err.Error())
+				break
+			}
 		}
 	}
 
