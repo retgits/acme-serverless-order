@@ -6,6 +6,18 @@ import (
 	"github.com/retgits/creditcard"
 )
 
+// Metadata ...
+type Metadata struct {
+	// Domain represents the the event came from (like Payment or Order)
+	Domain string `json:"domain"`
+	// Source represents the function the event came from (like ValidateCreditCard or SubmitOrder)
+	Source string `json:"source"`
+	// Type respresents the type of event this is (like CreditCardValidated)
+	Type string `json:"type"`
+	// Status represents the current status of the event (like Success)
+	Status string `json:"status"`
+}
+
 type PaymentRequest struct {
 	OrderID string          `json:"orderID"`
 	Card    creditcard.Card `json:"card"`
@@ -27,17 +39,17 @@ func (r *Orders) Marshal() ([]byte, error) {
 }
 
 type Order struct {
-	OrderID   string   `json:"_id"`
-	Status    *string  `json:"status,omitempty"`
-	UserID    string   `json:"userid,omitempty"`
-	Firstname *string  `json:"firstname,omitempty"`
-	Lastname  *string  `json:"lastname,omitempty"`
-	Address   *Address `json:"address,omitempty"`
-	Email     *string  `json:"email,omitempty"`
-	Delivery  string   `json:"delivery"`
-	Card      Card     `json:"card,omitempty"`
-	Cart      []Cart   `json:"cart"`
-	Total     string   `json:"total,omitempty"`
+	OrderID   string          `json:"_id"`
+	Status    *string         `json:"status,omitempty"`
+	UserID    string          `json:"userid,omitempty"`
+	Firstname *string         `json:"firstname,omitempty"`
+	Lastname  *string         `json:"lastname,omitempty"`
+	Address   *Address        `json:"address,omitempty"`
+	Email     *string         `json:"email,omitempty"`
+	Delivery  string          `json:"delivery"`
+	Card      creditcard.Card `json:"card,omitempty"`
+	Cart      []Cart          `json:"cart"`
+	Total     string          `json:"total,omitempty"`
 }
 
 type Address struct {
@@ -46,14 +58,6 @@ type Address struct {
 	Zip     *string `json:"zip,omitempty"`
 	State   *string `json:"state,omitempty"`
 	Country *string `json:"country,omitempty"`
-}
-
-type Card struct {
-	Type     string `json:"type,omitempty"`
-	Number   string `json:"number,omitempty"`
-	ExpMonth string `json:"expMonth,omitempty"`
-	ExpYear  string `json:"expYear,omitempty"`
-	Ccv      string `json:"ccv,omitempty"`
 }
 
 type Cart struct {
@@ -110,15 +114,51 @@ func UnmarshalPaymentResponse(data []byte) (PaymentResponse, error) {
 	return r, err
 }
 
-type Shipment struct {
+type ShipmentStatus struct {
 	TrackingNumber string `json:"trackingNumber"`
 	OrderNumber    string `json:"orderNumber"`
 	Status         string `json:"status"`
 }
 
-// UnmarshalShipment takes a byte array and turns that into a Shipment
-func UnmarshalShipment(data []byte) (Shipment, error) {
-	var r Shipment
+// UnmarshalShipment parses the JSON-encoded data and stores the result in a ShipmentStatus
+func UnmarshalShipment(data []byte) (ShipmentStatus, error) {
+	var r ShipmentStatus
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+// CreditcardValidatedEvent ...
+type CreditcardValidatedEvent struct {
+	Metadata Metadata                `json:"metadata"`
+	Data     CreditcardValidatedData `json:"data"`
+}
+
+// CreditcardValidatedData ...
+type CreditcardValidatedData struct {
+	Success       bool   `json:"success"`
+	Status        int    `json:"status"`
+	Message       string `json:"message"`
+	Amount        string `json:"amount,omitempty"`
+	TransactionID string `json:"transactionID"`
+	OrderID       string `json:"orderID"`
+}
+
+// UnmarshalCreditcardValidatedEvent ...
+func UnmarshalCreditcardValidatedEvent(data []byte) (CreditcardValidatedEvent, error) {
+	var r CreditcardValidatedEvent
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+// ShipmentUpdateEvent ...
+type ShipmentUpdateEvent struct {
+	Metadata Metadata       `json:"metadata"`
+	Data     ShipmentStatus `json:"data"`
+}
+
+// UnmarshalShipmentUpdateEvent ...
+func UnmarshalShipmentUpdateEvent(data []byte) (ShipmentUpdateEvent, error) {
+	var r ShipmentUpdateEvent
 	err := json.Unmarshal(data, &r)
 	return r, err
 }
