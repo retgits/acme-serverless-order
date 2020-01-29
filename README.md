@@ -2,7 +2,7 @@
 
 > An order service, because what is a shop without actual orders to be shipped?
 
-The Shipping service is part of the [ACME Fitness Serverless Shop](https://github.com/vmwarecloudadvocacy/acme_fitness_demo). The goal of this specific service is, as the name implies, to ship products using a wide variety of shipping suppliers.
+The Shipping service is part of the [ACME Fitness Serverless Shop](https://github.com/retgits/acme-serverless). The goal of this specific service is, as the name implies, to ship products using a wide variety of shipping suppliers.
 
 ## Prerequisites
 
@@ -16,16 +16,22 @@ The order service has a few different eventing platforms available:
 
 * [Amazon EventBridge](https://aws.amazon.com/eventbridge/)
 * [Amazon Simple Queue Service](https://aws.amazon.com/sqs/)
+* [Amazon API Gateway](https://aws.amazon.com/api-gateway/)
 
-For all options there is a Lambda function ready to be deployed where events arrive from and are sent to that particular eventing mechanism. You can find the code in `./cmd/lambda-<event platform>`. There is a ready made test function available as well that sends a message to the eventing platform. The code for the tester can be found in `./cmd/test-<event platform>`. The messages the testing app sends, are located under the [`test`](./test) folder.
+For all options there is a Lambda function ready to be deployed where events arrive from and are sent to that particular eventing mechanism. You can find the code in `./cmd/lambda-order-<event platform>`. There is a ready made test function available as well that sends a message to the eventing platform. The code for the tester can be found in `./cmd/test-<event platform>`. The messages the testing app sends, are located under the [`test`](./test) folder.
 
-The Lambda functions _[lambda-all-orders](./cmd/lambda-all-orders)_, _[lambda-user-orders](./cmd/lambda-user-orders)_, _[lambda-sqs-add](./cmd/lambda-sqs-add)_, and _[lambda-eventbridge-add](./cmd/lambda-eventbridge-add)_ are all triggered by an HTTP call.
+There are four Lambda functions of the order service are triggered by [Amazon API Gateway](https://aws.amazon.com/api-gateway/):
+
+* [lambda-order-all](./cmd/lambda-order-all)
+* [lambda-order-users](./cmd/lambda-order-users)
+* [lambda-order-sqs-add](./cmd/lambda-order-sqs-add)
+* [lambda-order-eventbridge-add](./cmd/lambda-order-eventbridge-add)
 
 ## Data Stores
 
 The order service supports the following data stores:
 
-* [Amazon DynamoDB](https://aws.amazon.com/dynamodb/). The table can be created using the makefile in [create-dynamodb](./cmd/create-dynamodb).
+* [Amazon DynamoDB](https://aws.amazon.com/dynamodb/): With [Makefile.dynamodb](./deploy/cloudformation), you can run run `make -f Makefile.dynamodb deploy` to create the DynamoDB table.
 
 ## Using Amazon EventBridge
 
@@ -49,17 +55,17 @@ Get the Go Module dependencies
 go get ./...
 ```
 
-Switch directories to any of the EventBridge folders
+Change directories to the [deploy/cloudformation](./deploy/cloudformation) folder
 
 ```bash
-cd ./cmd/lambda-eventbridge-<name>
+cd ./deploy/cloudformation
 ```
 
 If your event bus is not called _acmeserverless_, update the name of the `feature` parameter in the `template.yaml` file. Now you can build and deploy the Lambda function:
 
 ```bash
-make build
-make deploy
+make build TYPE=eventbridge
+make deploy TYPE=eventbridge
 ```
 
 ### Testing EventBridge
@@ -89,17 +95,17 @@ Get the Go Module dependencies
 go get ./...
 ```
 
-Switch directories to any of the SQS folders
+Change directories to the [deploy/cloudformation](./deploy/cloudformation) folder
 
 ```bash
-cd ./cmd/lambda-sqs-<name>
+cd ./deploy/cloudformation
 ```
 
 Now you can build and deploy the Lambda function:
 
 ```bash
-make build
-make deploy
+make build TYPE=sqs
+make deploy TYPE=sqs
 ```
 
 ### Testing SQS
@@ -462,16 +468,18 @@ After delivery:
 
 ## Using Make
 
-The Makefiles for the Lambda executables have a few a bunch of options available:
+The Makefiles in the [Cloudformation](./deploy/cloudformation) directory have a few a bunch of options available:
 
 | Target  | Description                                                |
 |---------|------------------------------------------------------------|
 | build   | Build the executable for Lambda                            |
 | clean   | Remove all generated files                                 |
-| deploy  | Deploy the app to AWS Lambda                               |
+| deploy  | Deploy the app to AWS                                      |
 | destroy | Deletes the CloudFormation stack and all created resources |
 | help    | Displays the help for each target (this message)           |
 | vuln    | Scans the Go.mod file for known vulnerabilities using Snyk |
+
+The targets `build` and `deploy` need a variable **`TYPE`** set to either `eventbridge` or `sqs` to build and deploy the correct Lambda functions.
 
 ## Using Mage
 
@@ -502,9 +510,11 @@ The Magefile in this repository has a bunch of targets available:
 | test   | 'Go test' automates testing the packages named by the import paths.                                      |
 | vuln   | uses Snyk to test for any known vulnerabilities in go.mod.                                               |
 
+The targets `build` and `deploy` need a variable **`TYPE`** set to either `eventbridge` or `sqs` to build and deploy the correct Lambda functions.
+
 ## Contributing
 
-[Pull requests](https://github.com/retgits/acme-serverless-shipment/pulls) are welcome. For major changes, please open [an issue](https://github.com/retgits/acme-serverless-shipment/issues) first to discuss what you would like to change.
+[Pull requests](https://github.com/retgits/acme-serverless-order/pulls) are welcome. For major changes, please open [an issue](https://github.com/retgits/acme-serverless-order/issues) first to discuss what you would like to change.
 
 Please make sure to update tests as appropriate.
 
