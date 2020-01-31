@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/gofrs/uuid"
-	"github.com/retgits/acme-serverless-order"
+	order "github.com/retgits/acme-serverless-order"
 	"github.com/retgits/acme-serverless-order/internal/datastore/dynamodb"
 	"github.com/retgits/acme-serverless-order/internal/emitter"
 	"github.com/retgits/acme-serverless-order/internal/emitter/eventbridge"
@@ -71,9 +71,13 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		return handleError("response", err)
 	}
 
+	headers := request.Headers
+	headers["Access-Control-Allow-Origin"] = "*"
+
 	response := events.APIGatewayProxyResponse{
 		StatusCode: http.StatusOK,
 		Body:       string(payload),
+		Headers:    headers,
 	}
 
 	return response, nil

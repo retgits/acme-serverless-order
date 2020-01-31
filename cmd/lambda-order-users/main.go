@@ -34,9 +34,13 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		return handleError("marshal orders", err)
 	}
 
+	headers := request.Headers
+	headers["Access-Control-Allow-Origin"] = "*"
+
 	response := events.APIGatewayProxyResponse{
 		StatusCode: http.StatusOK,
 		Body:       string(payload),
+		Headers:    headers,
 	}
 
 	return response, nil
