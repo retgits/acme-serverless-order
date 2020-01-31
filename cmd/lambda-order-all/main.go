@@ -10,29 +10,33 @@ import (
 	"github.com/retgits/acme-serverless-order/internal/datastore/dynamodb"
 )
 
-func handleError(area string, err error) (events.APIGatewayProxyResponse, error) {
+func handleError(area string, headers map[string]string, err error) (events.APIGatewayProxyResponse, error) {
 	msg := fmt.Sprintf("error %s: %s", area, err.Error())
 	log.Println(msg)
 	return events.APIGatewayProxyResponse{
 		StatusCode: http.StatusInternalServerError,
 		Body:       msg,
+		Headers:    headers,
 	}, err
 }
 
 func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	headers := request.Headers
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	headers["Access-Control-Allow-Origin"] = "*"
+
 	dynamoStore := dynamodb.New()
 	orders, err := dynamoStore.AllOrders()
 	if err != nil {
-		return handleError("retrieving orders", err)
+		return handleError("retrieving orders", headers, err)
 	}
 
 	payload, err := orders.Marshal()
 	if err != nil {
-		return handleError("marshal orders", err)
+		return handleError("marshal orders", headers, err)
 	}
-
-	headers := request.Headers
-	headers["Access-Control-Allow-Origin"] = "*"
 
 	response := events.APIGatewayProxyResponse{
 		StatusCode: http.StatusOK,
