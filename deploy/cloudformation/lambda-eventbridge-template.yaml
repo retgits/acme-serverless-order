@@ -33,7 +33,7 @@ Resources:
       Handler: lambda-order-all
       Runtime: go1.x
       CodeUri: bin/
-      FunctionName: AllOrders
+      FunctionName: !Sub "AllOrders-${Stage}"
       Description: A Lambda function to get all orders
       MemorySize: 256
       Timeout: 10
@@ -70,7 +70,7 @@ Resources:
       Handler: lambda-order-users
       Runtime: go1.x
       CodeUri: bin/
-      FunctionName: UserOrders
+      FunctionName: !Sub "UserOrders-${Stage}"
       Description: A Lambda function to get all orders for a user
       MemorySize: 256
       Timeout: 10
@@ -107,7 +107,7 @@ Resources:
       Handler: lambda-order-eventbridge-add
       Runtime: go1.x
       CodeUri: bin/
-      FunctionName: AddOrder
+      FunctionName: !Sub "AddOrder-${Stage}"
       Description: A Lambda function to add orders
       MemorySize: 256
       Timeout: 10
@@ -145,7 +145,7 @@ Resources:
       Handler: lambda-order-eventbridge-ship
       Runtime: go1.x
       CodeUri: bin/
-      FunctionName: ShipOrder
+      FunctionName: !Sub "ShipOrder-${Stage}"
       Description: A Lambda function to send orders to the shipment service
       MemorySize: 256
       Timeout: 10
@@ -188,7 +188,7 @@ Resources:
       Handler: lambda-order-eventbridge-update
       Runtime: go1.x
       CodeUri: bin/
-      FunctionName: UpdateOrder
+      FunctionName: !Sub "UpdateOrder-${Stage}"
       Description: A Lambda function to update orders
       MemorySize: 256
       Timeout: 10
