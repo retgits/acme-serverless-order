@@ -20,7 +20,14 @@ Parameters:
     Type: String
     Default: dev
 
+## Specifies properties that are common to all your serverless functions, APIs, and simple tables.
 Globals:
+  Function:
+    Environment:
+      Variables:
+        TABLE: !Sub "${Feature}-${Stage}"
+        REGION: !Ref AWS::Region
+        #DYNAMO_URL: http://host.docker.internal:8000 ## Uncomment this property to be able to test locally using DynamoDB local 
   Api:
     Cors:
       AllowOrigin: "'*'"
@@ -42,9 +49,6 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
-      Environment:
-        Variables:
-          TABLE: "Order"
       Events:
         GetAllOrdersAPI:
           Type: Api
@@ -79,9 +83,6 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
-      Environment:
-        Variables:
-          TABLE: "Order"
       Events:
         GetOrdersByUserAPI:
           Type: Api
@@ -116,10 +117,6 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
-      Environment:
-        Variables:
-          REGION: !Ref AWS::Region
-          TABLE: "Order"
       Events:
         AddAPI:
           Type: Api
@@ -154,10 +151,6 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
-      Environment:
-        Variables:
-          REGION: !Ref AWS::Region
-          TABLE: "Order"
       Events:
         CreditCardValidated:
           Type: CloudWatchEvent
@@ -197,10 +190,6 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
-      Environment:
-        Variables:
-          REGION: !Ref AWS::Region
-          TABLE: "Order"
       Events:
         OrderShipped:
           Type: CloudWatchEvent

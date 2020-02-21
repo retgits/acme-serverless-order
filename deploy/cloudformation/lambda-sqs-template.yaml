@@ -20,7 +20,14 @@ Parameters:
     Type: String
     Default: dev
 
+## Specifies properties that are common to all your serverless functions, APIs, and simple tables.
 Globals:
+  Function:
+    Environment:
+      Variables:
+        TABLE: !Sub "${Feature}-${Stage}"
+        REGION: !Ref AWS::Region
+        #DYNAMO_URL: http://host.docker.internal:8000 ## Uncomment this property to be able to test locally using DynamoDB local 
   Api:
     Cors:
       AllowOrigin: "'*'"
@@ -42,9 +49,6 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
-      Environment:
-        Variables:
-          TABLE: "Order"
       Events:
         GetAllOrdersAPI:
           Type: Api
@@ -79,9 +83,6 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
-      Environment:
-        Variables:
-          TABLE: "Order"
       Events:
         GetOrdersByUserAPI:
           Type: Api
@@ -120,9 +121,7 @@ Resources:
             QueueName: !Sub '${Stage}-${Feature}-payment-request'
       Environment:
         Variables:
-          REGION: !Ref AWS::Region
           RESPONSEQUEUE: !Sub 'https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${Stage}-${Feature}-payment-request'
-          TABLE: Order
       Events:
         AddAPI:
           Type: Api
@@ -161,8 +160,6 @@ Resources:
             QueueName: !Sub '${Stage}-${Feature}-shipment-request'
       Environment:
         Variables:
-          REGION: !Ref AWS::Region
-          TABLE: "Order"
           RESPONSEQUEUE: !Sub 'https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${Stage}-${Feature}-shipment-request'
       Events:
         SendToShipment:
@@ -199,10 +196,6 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
-      Environment:
-        Variables:
-          REGION: !Ref AWS::Region
-          TABLE: "Order"
       Events:
         UpdateOrder:
           Type: SQS
