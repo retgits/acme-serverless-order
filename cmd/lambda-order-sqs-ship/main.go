@@ -1,8 +1,13 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"time"
+
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/getsentry/sentry-go"
 	order "github.com/retgits/acme-serverless-order"
 	"github.com/retgits/acme-serverless-order/internal/datastore/dynamodb"
 	"github.com/retgits/acme-serverless-order/internal/emitter"
@@ -10,8 +15,20 @@ import (
 )
 
 func handler(request events.SQSEvent) error {
+	sentrySyncTransport := sentry.NewHTTPSyncTransport()
+	sentrySyncTransport.Timeout = time.Second * 3
+
+	sentry.Init(sentry.ClientOptions{
+		Dsn:         os.Getenv("SENTRY_DSN"),
+		Transport:   sentrySyncTransport,
+		ServerName:  os.Getenv("FUNCTION_NAME"),
+		Release:     os.Getenv("VERSION"),
+		Environment: os.Getenv("STAGE"),
+	})
+
 	req, err := order.UnmarshalCreditcardValidatedEvent([]byte(request.Records[0].Body))
 	if err != nil {
+		sentry.CaptureException(fmt.Errorf("error unmarshalling creditcard validated event: %s", err.Error()))
 		return err
 	}
 
@@ -23,6 +40,8 @@ func handler(request events.SQSEvent) error {
 	dynamoStore := dynamodb.New()
 	ord, err := dynamoStore.UpdateStatus(shipmentStatus)
 	if err != nil {
+		sentry.CaptureException(fmt.Errorf("error updating shipment status: %s", err.Error()))
+
 		return err
 	}
 
@@ -41,7 +60,23 @@ func handler(request events.SQSEvent) error {
 			},
 		}
 
-		return em.SendShipmentRequestedEvent(evt)
+		sentry.AddBreadcrumb(&sentry.Breadcrumb{
+			Category:  "ShipmentRequested",
+			Timestamp: time.Now().Unix(),
+			Level:     sentry.LevelInfo,
+			Data: map[string]interface{}{
+				"OrderID":  req.Data.OrderID,
+				"Delivery": ord.Delivery,
+			},
+		})
+
+		err = em.SendShipmentRequestedEvent(evt)
+		if err != nil {
+			sentry.CaptureException(fmt.Errorf("error sending ShipmentRequested event: %s", err.Error()))
+			return err
+		}
+
+		sentry.CaptureMessage(fmt.Sprintf("shipment successfully requested for order [%s]", req.Data.OrderID))
 	}
 
 	return nil

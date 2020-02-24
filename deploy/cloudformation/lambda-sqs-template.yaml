@@ -19,6 +19,9 @@ Parameters:
   Stage:
     Type: String
     Default: dev
+  SentryDSN:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /Sentry/Dsn
 
 ## Specifies properties that are common to all your serverless functions, APIs, and simple tables.
 Globals:
@@ -28,6 +31,9 @@ Globals:
         TABLE: !Sub "${Feature}-${Stage}"
         REGION: !Ref AWS::Region
         #DYNAMO_URL: http://host.docker.internal:8000 ## Uncomment this property to be able to test locally using DynamoDB local 
+        VERSION: !Ref Version
+        STAGE: !Ref Stage
+        SENTRY_DSN: !Ref SentryDSN
   Api:
     Cors:
       AllowOrigin: "'*'"
@@ -49,6 +55,9 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
+      Environment:
+        Variables:
+          FUNCTION_NAME: AllOrders
       Events:
         GetAllOrdersAPI:
           Type: Api
@@ -83,6 +92,9 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
+      Environment:
+        Variables:
+          FUNCTION_NAME: UserOrders
       Events:
         GetOrdersByUserAPI:
           Type: Api
@@ -122,6 +134,7 @@ Resources:
       Environment:
         Variables:
           RESPONSEQUEUE: !Sub 'https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${Stage}-${Feature}-payment-request'
+          FUNCTION_NAME: AddOrder
       Events:
         AddAPI:
           Type: Api
@@ -161,6 +174,7 @@ Resources:
       Environment:
         Variables:
           RESPONSEQUEUE: !Sub 'https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${Stage}-${Feature}-shipment-request'
+          FUNCTION_NAME: ShipOrder
       Events:
         SendToShipment:
           Type: SQS
@@ -196,6 +210,9 @@ Resources:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
             TableName: "Order"
+      Environment:
+        Variables:
+          FUNCTION_NAME: UpdateOrder
       Events:
         UpdateOrder:
           Type: SQS
