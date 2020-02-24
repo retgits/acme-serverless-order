@@ -54,7 +54,7 @@ Resources:
       Policies:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
-            TableName: "Order"
+            TableName: !Sub "${Feature}-${Stage}"
       Environment:
         Variables:
           FUNCTION_NAME: AllOrders
@@ -91,7 +91,7 @@ Resources:
       Policies:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
-            TableName: "Order"
+            TableName: !Sub "${Feature}-${Stage}"
       Environment:
         Variables:
           FUNCTION_NAME: UserOrders
@@ -128,7 +128,7 @@ Resources:
       Policies:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
-            TableName: "Order"
+            TableName: !Sub "${Feature}-${Stage}"
         - SQSSendMessagePolicy:
             QueueName: !Sub '${Stage}-${Feature}-payment-request'
       Environment:
@@ -168,7 +168,7 @@ Resources:
       Policies:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
-            TableName: "Order"
+            TableName: !Sub "${Feature}-${Stage}"
         - SQSSendMessagePolicy:
             QueueName: !Sub '${Stage}-${Feature}-shipment-request'
       Environment:
@@ -209,7 +209,7 @@ Resources:
       Policies:
         - AWSLambdaRole
         - DynamoDBCrudPolicy:
-            TableName: "Order"
+            TableName: !Sub "${Feature}-${Stage}"
       Environment:
         Variables:
           FUNCTION_NAME: UpdateOrder
