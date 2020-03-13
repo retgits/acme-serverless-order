@@ -1,3 +1,5 @@
+// Package dynamodb leverages Amazon DynamoDB, a key-value and document database that delivers single-digit millisecond
+// performance at any scale to store data.
 package dynamodb
 
 import (
@@ -11,12 +13,16 @@ import (
 	"github.com/gofrs/uuid"
 	order "github.com/retgits/acme-serverless-order"
 	"github.com/retgits/acme-serverless-order/internal/datastore"
+	shipment "github.com/retgits/acme-serverless-shipment"
 )
 
-// Create a single instance of the dynamoDB service
-// which can be reused if the container stays warm
+// The pointer to DynamoDB provides the API operation methods for making requests to Amazon DynamoDB.
+// This specifically creates a single instance of the dynamoDB service which can be reused if the
+// container stays warm.
 var dbs *dynamodb.DynamoDB
 
+// manager is an empty struct that implements the methods of the
+// Manager interface.
 type manager struct{}
 
 // init creates the connection to dynamoDB. If the environment variable
@@ -66,7 +72,7 @@ func (m manager) AddOrder(o order.Order) (order.Order, error) {
 		S: aws.String(o.UserID),
 	}
 	em[":payload"] = &dynamodb.AttributeValue{
-		S: aws.String(payload),
+		S: aws.String(string(payload)),
 	}
 
 	uii := &dynamodb.UpdateItemInput{
@@ -162,7 +168,7 @@ func (m manager) UserOrders(userID string) (order.Orders, error) {
 }
 
 // UpdateStatus sets thew new OrderStatus for a specific order
-func (m manager) UpdateStatus(s order.ShipmentStatus) (order.Order, error) {
+func (m manager) UpdateStatus(s shipment.ShipmentData) (order.Order, error) {
 	// Create a map of DynamoDB Attribute Values containing the table keys
 	// for the access pattern PK = ORDER SK = ID
 	km := make(map[string]*dynamodb.AttributeValue)
@@ -202,7 +208,7 @@ func (m manager) UpdateStatus(s order.ShipmentStatus) (order.Order, error) {
 
 	em := make(map[string]*dynamodb.AttributeValue)
 	em[":payload"] = &dynamodb.AttributeValue{
-		S: aws.String(payload),
+		S: aws.String(string(payload)),
 	}
 
 	uii := &dynamodb.UpdateItemInput{

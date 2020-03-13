@@ -35,23 +35,16 @@ help: ## Displays the help for each target (this message)
 	echo Usage: make [TARGET]
 	echo
 	echo Makefile targets
-	grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile.lambda | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+	grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 	echo
 
 build: ## Build the executable for Lambda
 	echo
 	GOOS=linux GOARCH=amd64 go build -o ./bin/lambda-order-all ../../cmd/lambda-order-all
 	GOOS=linux GOARCH=amd64 go build -o ./bin/lambda-order-users ../../cmd/lambda-order-users
-ifeq ($(TYPE), eventbridge)
 	GOOS=linux GOARCH=amd64 go build -o ./bin/lambda-order-eventbridge-add ../../cmd/lambda-order-eventbridge-add
 	GOOS=linux GOARCH=amd64 go build -o ./bin/lambda-order-eventbridge-ship ../../cmd/lambda-order-eventbridge-ship
 	GOOS=linux GOARCH=amd64 go build -o ./bin/lambda-order-eventbridge-update ../../cmd/lambda-order-eventbridge-update
-endif
-ifeq ($(TYPE), sqs)
-	GOOS=linux GOARCH=amd64 go build -o ./bin/lambda-order-sqs-add ../../cmd/lambda-order-sqs-add
-	GOOS=linux GOARCH=amd64 go build -o ./bin/lambda-order-sqs-ship ../../cmd/lambda-order-sqs-ship
-	GOOS=linux GOARCH=amd64 go build -o ./bin/lambda-order-sqs-update ../../cmd/lambda-order-sqs-update
-endif
 	echo
 
 vuln: ## Scans the Go.mod file for known vulnerabilities using Snyk.
@@ -67,7 +60,7 @@ clean: ## Remove all generated files
 
 deploy: ## Deploy the app to AWS Lambda
 	echo
-	aws cloudformation package --template-file lambda-$(TYPE)-template.yaml --output-template-file lambda-packaged.yaml --s3-bucket $(aws_bucket)
+	aws cloudformation package --template-file lambda-eventbridge-template.yaml --output-template-file lambda-packaged.yaml --s3-bucket $(aws_bucket)
 	aws cloudformation deploy \
 		--template-file lambda-packaged.yaml \
 		--stack-name $(project_name)-$(stage) \

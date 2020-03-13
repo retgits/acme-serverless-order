@@ -8,23 +8,25 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/getsentry/sentry-go"
-	order "github.com/retgits/acme-serverless-order"
 	"github.com/retgits/acme-serverless-order/internal/datastore/dynamodb"
+	shipment "github.com/retgits/acme-serverless-shipment"
 )
 
+// handler handles the EventBridge events and returns an error if anything goes wrong.
+// The resulting event, if no error is thrown, is sent to an EventBridge bus.
 func handler(request json.RawMessage) error {
-	sentrySyncTransport := sentry.NewHTTPSyncTransport()
-	sentrySyncTransport.Timeout = time.Second * 3
-
+	// Initiialize a connection to Sentry to capture errors and traces
 	sentry.Init(sentry.ClientOptions{
-		Dsn:         os.Getenv("SENTRY_DSN"),
-		Transport:   sentrySyncTransport,
+		Dsn: os.Getenv("SENTRY_DSN"),
+		Transport: &sentry.HTTPSyncTransport{
+			Timeout: time.Second * 3,
+		},
 		ServerName:  os.Getenv("FUNCTION_NAME"),
 		Release:     os.Getenv("VERSION"),
 		Environment: os.Getenv("STAGE"),
 	})
 
-	req, err := order.UnmarshalShipmentUpdateEvent(request)
+	req, err := shipment.UnmarshalShipmentSent(request)
 	if err != nil {
 		sentry.CaptureException(fmt.Errorf("error unmarshalling shipment update event: %s", err.Error()))
 		return err

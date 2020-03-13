@@ -2,46 +2,58 @@
 
 > An order service, because what is a shop without actual orders to be shipped?
 
-The Shipping service is part of the [ACME Fitness Serverless Shop](https://github.com/retgits/acme-serverless). The goal of this specific service is, as the name implies, to ship products using a wide variety of shipping suppliers.
+The Shipping service is part of the [ACME Fitness Serverless Shop](https://github.com/retgits/acme-serverless). The goal of this specific service is to interact with the catalog, front-end, and make calls to the order services.
 
 ## Prerequisites
 
 * [Go (at least Go 1.12)](https://golang.org/dl/)
-* [An AWS Account](https://portal.aws.amazon.com/billing/signup)
-* The _vuln_ targets for Make and Mage rely on the [Snyk](http://snyk.io/) CLI
-* This service uses [Sentry.io](https://sentry.io) for tracing and error reporting
+* [An AWS account](https://portal.aws.amazon.com/billing/signup)
+* [A Pulumi account](https://app.pulumi.com/signup)
+* [A Sentry.io account](https://sentry.io) if you want to enable tracing and error reporting
 
-## Eventing Options
+## Deploying
 
-The order service has a few different eventing platforms available:
+### With Pulumi (using SQS for eventing)
 
-* [Amazon EventBridge](https://aws.amazon.com/eventbridge/)
-* [Amazon Simple Queue Service](https://aws.amazon.com/sqs/)
-* [Amazon API Gateway](https://aws.amazon.com/api-gateway/)
+To deploy the Order Service you'll need a [Pulumi account](https://app.pulumi.com/signup). Once you have your Pulumi account and configured the [Pulumi CLI](https://www.pulumi.com/docs/get-started/aws/install-pulumi/), you can initialize a new stack using the Pulumi templates in the [pulumi](./pulumi) folder.
 
-For all options there is a Lambda function ready to be deployed where events arrive from and are sent to that particular eventing mechanism. You can find the code in `./cmd/lambda-order-<event platform>`. There is a ready made test function available as well that sends a message to the eventing platform. The code for the tester can be found in `./cmd/test-<event platform>`. The messages the testing app sends, are located under the [`test`](./test) folder.
+```bash
+cd pulumi
+pulumi stack init <your pulumi org>/acmeserverless-order/dev
+```
 
-There are four Lambda functions of the order service are triggered by [Amazon API Gateway](https://aws.amazon.com/api-gateway/):
+You'll need to create a [Pulumi.dev.yaml](./pulumi/Pulumi.dev.yaml) file that will contain all configuration data to deploy the app:
 
-* [lambda-order-all](./cmd/lambda-order-all)
-* [lambda-order-users](./cmd/lambda-order-users)
-* [lambda-order-sqs-add](./cmd/lambda-order-sqs-add)
-* [lambda-order-eventbridge-add](./cmd/lambda-order-eventbridge-add)
+```yaml
+config:
+  aws:region: us-west-2 ## The region you want to deploy to
+  awsconfig:lambda:
+    responsequeue: ## The ARN of the Shipment Response SQS queue (which you can create using the Pulumi deployment in the acme-serverless repo)
+    requestqueue: ## The ARN of the Shipment Request SQS queue (which you can create using the Pulumi deployment in the acme-serverless repo)
+    region: us-west-2 ## The region you want to deploy to
+    sentrydsn: ## The DSN to connect to Sentry
+    paymentresponsequeue: ## The ARN of the Payment Response SQS queue (which you can create using the Pulumi deployment in the acme-serverless repo)
+    paymentrequestqueue: ## The ARN of the Payment Request SQS queue (which you can create using the Pulumi deployment in the acme-serverless repo)
+    shipmentresponsequeue: ## The ARN of the Shipment Response SQS queue (which you can create using the Pulumi deployment in the acme-serverless repo)
+    shipmentrequestqueue: ## The ARN of the Shipment Request SQS queue (which you can create using the Pulumi deployment in the acme-serverless repo)
+  awsconfig:tags:
+    author: retgits ## The author, you...
+    feature: acmeserverless
+    team: vcs ## The team you're on
+    version: 0.1.0 ## The version
+```
 
-## Data Stores
+To create the Pulumi stack, and create the Order service, run `pulumi up`.
 
-The order service supports the following data stores:
+If you want to keep track of the resources in Pulumi, you can add tags to your stack as well.
 
-* [Amazon DynamoDB](https://aws.amazon.com/dynamodb/): The scripts to both create and seed the DynamoDB can be found in the [acme-serverless](https://github.com/retgits/acme-serverless) repo.
+```bash
+pulumi stack tag set app:name acmeserverless
+pulumi stack tag set app:feature acmeserverless-order
+pulumi stack tag set app:domain order
+```
 
-## Using Amazon EventBridge
-
-### Prerequisites for EventBridge
-
-* [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html) installed and configured
-* [Custom EventBus](https://docs.aws.amazon.com/eventbridge/latest/userguide/create-event-bus.html) configured, the name of the configured event bus should be set as the `feature` parameter in the `template.yaml` file.
-
-### Build and deploy for EventBridge
+### With CloudFormation (using EventBridge for eventing)
 
 Clone this repository
 
@@ -56,58 +68,22 @@ Get the Go Module dependencies
 go get ./...
 ```
 
-Change directories to the [deploy/cloudformation](./deploy/cloudformation) folder
+Change directories to the [cloudformation](./cloudformation) folder
 
 ```bash
-cd ./deploy/cloudformation
+cd ./cloudformation
 ```
 
 If your event bus is not called _acmeserverless_, update the name of the `feature` parameter in the `template.yaml` file. Now you can build and deploy the Lambda function:
 
 ```bash
-make build TYPE=eventbridge
-make deploy TYPE=eventbridge
+make build
+make deploy
 ```
 
-### Testing EventBridge
+## Testing
 
-To send a message to an Amazon EventBridge eventbus, check out the [acme-serverless README](https://github.com/retgits/acme-serverless#testing-eventbridge)
-
-### Prerequisites for SQS
-
-* [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html) installed and configured
-
-### Build and deploy for SQS
-
-Clone this repository
-
-```bash
-git clone https://github.com/retgits/acme-serverless-order
-cd acme-serverless-order
-```
-
-Get the Go Module dependencies
-
-```bash
-go get ./...
-```
-
-Change directories to the [deploy/cloudformation](./deploy/cloudformation) folder
-
-```bash
-cd ./deploy/cloudformation
-```
-
-Now you can build and deploy the Lambda function:
-
-```bash
-make build TYPE=sqs
-make deploy TYPE=sqs
-```
-
-### Testing SQS
-
-To send a message to an SQS queue, check out the [acme-serverless README](https://github.com/retgits/acme-serverless#testing-sqs)
+To test, you can use the SQS or EventBridge test apps in the [acme-serverless](https://github.com/retgits/acme-serverless) repo.
 
 ## API
 
@@ -433,16 +409,6 @@ After delivery:
     }
 }
 ```
-
-## Using Make
-
-The Makefiles and CloudFormation templates can be found in the [acme-serverless](https://github.com/retgits/acme-serverless/tree/master/deploy/cloudformation/order) repository
-
-## Using Mage
-
-If you want to "go all Go" (_pun intended_) and write plain-old go functions to build and deploy, you can use [Mage](https://magefile.org/). Mage is a make/rake-like build tool using Go so Mage automatically uses the functions you create as Makefile-like runnable targets.
-
-The Magefile can be found in the [acme-serverless](https://github.com/retgits/acme-serverless/tree/master/deploy/mage) repository
 
 ## Contributing
 

@@ -10,29 +10,32 @@ import (
 	"github.com/getsentry/sentry-go"
 	order "github.com/retgits/acme-serverless-order"
 	"github.com/retgits/acme-serverless-order/internal/datastore/dynamodb"
-	"github.com/retgits/acme-serverless-order/internal/emitter"
 	"github.com/retgits/acme-serverless-order/internal/emitter/eventbridge"
+	payment "github.com/retgits/acme-serverless-payment"
+	shipment "github.com/retgits/acme-serverless-shipment"
 )
 
+// handler handles the EventBridge events and returns an error if anything goes wrong.
+// The resulting event, if no error is thrown, is sent to an EventBridge bus.
 func handler(request json.RawMessage) error {
-	sentrySyncTransport := sentry.NewHTTPSyncTransport()
-	sentrySyncTransport.Timeout = time.Second * 3
-
+	// Initiialize a connection to Sentry to capture errors and traces
 	sentry.Init(sentry.ClientOptions{
-		Dsn:         os.Getenv("SENTRY_DSN"),
-		Transport:   sentrySyncTransport,
+		Dsn: os.Getenv("SENTRY_DSN"),
+		Transport: &sentry.HTTPSyncTransport{
+			Timeout: time.Second * 3,
+		},
 		ServerName:  os.Getenv("FUNCTION_NAME"),
 		Release:     os.Getenv("VERSION"),
 		Environment: os.Getenv("STAGE"),
 	})
 
-	req, err := order.UnmarshalCreditcardValidatedEvent(request)
+	req, err := payment.UnmarshalCreditCardValidated(request)
 	if err != nil {
 		sentry.CaptureException(fmt.Errorf("error unmarshalling creditcard validated event: %s", err.Error()))
 		return err
 	}
 
-	shipmentStatus := order.ShipmentStatus{
+	shipmentStatus := shipment.ShipmentData{
 		OrderNumber: req.Data.OrderID,
 		Status:      req.Data.Message,
 	}
@@ -46,27 +49,24 @@ func handler(request json.RawMessage) error {
 
 	if req.Data.Success {
 		em := eventbridge.New()
-		evt := emitter.ShipmentRequestedEvent{
-			Metadata: order.Metadata{
-				Domain: "Order",
+		evt := shipment.ShipmentRequested{
+			Metadata: shipment.Metadata{
+				Domain: order.Domain,
 				Source: "ShipOrder",
-				Type:   "ShipmentRequested",
+				Type:   shipment.ShipmentRequestedEvent,
 				Status: "success",
 			},
-			Data: emitter.ShipmentRequestedData{
+			Data: shipment.ShipmentRequest{
 				OrderID:  req.Data.OrderID,
 				Delivery: ord.Delivery,
 			},
 		}
 
 		sentry.AddBreadcrumb(&sentry.Breadcrumb{
-			Category:  "ShipmentRequested",
+			Category:  shipment.ShipmentRequestedEvent,
 			Timestamp: time.Now().Unix(),
 			Level:     sentry.LevelInfo,
-			Data: map[string]interface{}{
-				"OrderID":  req.Data.OrderID,
-				"Delivery": ord.Delivery,
-			},
+			Data:      evt.Data.ToMap(),
 		})
 
 		err = em.SendShipmentRequestedEvent(evt)
