@@ -2,36 +2,33 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/getsentry/sentry-go"
-	order "github.com/retgits/acme-serverless-order"
 	"github.com/retgits/acme-serverless-order/internal/datastore/dynamodb"
+	shipment "github.com/retgits/acme-serverless-shipment"
 )
 
 func handler(request events.SQSEvent) error {
-	sentrySyncTransport := sentry.NewHTTPSyncTransport()
-	sentrySyncTransport.Timeout = time.Second * 3
-
+	// Initiialize a connection to Sentry to capture errors and traces
 	sentry.Init(sentry.ClientOptions{
-		Dsn:         os.Getenv("SENTRY_DSN"),
-		Transport:   sentrySyncTransport,
+		Dsn: os.Getenv("SENTRY_DSN"),
+		Transport: &sentry.HTTPSyncTransport{
+			Timeout: time.Second * 3,
+		},
 		ServerName:  os.Getenv("FUNCTION_NAME"),
 		Release:     os.Getenv("VERSION"),
 		Environment: os.Getenv("STAGE"),
 	})
 
-	req, err := order.UnmarshalShipmentUpdateEvent([]byte(request.Records[0].Body))
+	req, err := shipment.UnmarshalShipmentSent([]byte(request.Records[0].Body))
 	if err != nil {
 		sentry.CaptureException(fmt.Errorf("error unmarshalling shipment update event: %s", err.Error()))
 		return err
 	}
-
-	log.Println(req)
 
 	dynamoStore := dynamodb.New()
 	_, err = dynamoStore.UpdateStatus(req.Data)

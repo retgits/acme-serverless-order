@@ -1,164 +1,144 @@
+// Package order contains all events that the Order service
+// in the ACME Serverless Fitness Shop can send and receive.
 package order
 
 import (
 	"encoding/json"
 
+	payment "github.com/retgits/acme-serverless-payment"
 	"github.com/retgits/creditcard"
 )
 
-// Metadata ...
+const (
+	// Domain is the domain where the services reside
+	Domain = "Order"
+)
+
+// Metadata is an envelope containing information on the domain, source, type, and status
+// of the event.
 type Metadata struct {
-	// Domain represents the the event came from (like Payment or Order)
+	// Domain represents the the event came from
+	// like Payment or Order.
 	Domain string `json:"domain"`
-	// Source represents the function the event came from (like ValidateCreditCard or SubmitOrder)
+
+	// Source represents the function the event came from
+	// like ValidateCreditCard or SubmitOrder.
 	Source string `json:"source"`
-	// Type respresents the type of event this is (like CreditCardValidated)
+
+	// Type respresents the type of event this is
+	// like CreditCardValidated.
 	Type string `json:"type"`
-	// Status represents the current status of the event (like Success)
+
+	// Status represents the current status of the event
+	// like Success or Failure.
 	Status string `json:"status"`
 }
 
-type PaymentRequest struct {
-	OrderID string          `json:"orderID"`
-	Card    creditcard.Card `json:"card"`
-	Total   string          `json:"total"`
-}
-
-func (r *PaymentRequest) Marshal() (string, error) {
-	b, err := json.Marshal(r)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
+// Orders is a slide of Order objects
 type Orders []Order
 
+// Marshal returns the JSON encoding of Orders.
 func (r *Orders) Marshal() ([]byte, error) {
 	return json.Marshal(r)
 }
 
+// Order represents an order that is made by a user in the
+// ACME Serverless Fitness Shop.
 type Order struct {
-	OrderID   string          `json:"_id"`
-	Status    *string         `json:"status,omitempty"`
-	UserID    string          `json:"userid,omitempty"`
-	Firstname *string         `json:"firstname,omitempty"`
-	Lastname  *string         `json:"lastname,omitempty"`
-	Address   *Address        `json:"address,omitempty"`
-	Email     *string         `json:"email,omitempty"`
-	Delivery  string          `json:"delivery"`
-	Card      creditcard.Card `json:"card,omitempty"`
-	Cart      []Cart          `json:"cart"`
-	Total     string          `json:"total,omitempty"`
+	// OrderID uniquely identifies the order
+	OrderID string `json:"_id"`
+
+	// Status represents the current status of the order
+	Status *string `json:"status,omitempty"`
+
+	// UserID represents the user who placed the order
+	UserID string `json:"userid,omitempty"`
+
+	// Firstname is the firstname of the user who placed the order
+	Firstname *string `json:"firstname,omitempty"`
+
+	// Lastname is the lastname of the user who placed the order
+	Lastname *string `json:"lastname,omitempty"`
+
+	// Address is an address where the order must be delivered
+	Address *Address `json:"address,omitempty"`
+
+	// Email is the email address to send spam to ;-)
+	Email *string `json:"email,omitempty"`
+
+	// Delivery is the delivery method the shipment must use
+	Delivery string `json:"delivery"`
+
+	// Creditcard isthe creditcard used to pay the order
+	Card creditcard.Card `json:"card,omitempty"`
+
+	// Cart contains all items part of the order
+	Cart []Cart `json:"cart"`
+
+	// Total represents the monetary value of the order
+	Total string `json:"total,omitempty"`
 }
 
+// Address is an address where the order must be delivered
 type Address struct {
-	Street  *string `json:"street,omitempty"`
-	City    *string `json:"city,omitempty"`
-	Zip     *string `json:"zip,omitempty"`
-	State   *string `json:"state,omitempty"`
+	// Street is the streetname
+	Street *string `json:"street,omitempty"`
+
+	// City is the city name
+	City *string `json:"city,omitempty"`
+
+	// Zip is the zip or postal code
+	Zip *string `json:"zip,omitempty"`
+
+	// State is the state
+	State *string `json:"state,omitempty"`
+
+	// Country is the country where the shipment must be sent
 	Country *string `json:"country,omitempty"`
 }
 
+// Cart contains all items part of the order
 type Cart struct {
-	ID          *string `json:"id,omitempty"`
+	// ID is the unique representation of the item
+	ID *string `json:"id,omitempty"`
+
+	// Description is a description of the actual item
 	Description *string `json:"description,omitempty"`
-	Quantity    *string `json:"quantity,omitempty"`
-	Price       *string `json:"price,omitempty"`
+
+	// Quantity notes how many of a specific item are bought
+	Quantity *string `json:"quantity,omitempty"`
+
+	// Price is the unit price of the item
+	Price *string `json:"price,omitempty"`
 }
 
-func (r *Order) Marshal() (string, error) {
-	s, err := json.Marshal(r)
-	if err != nil {
-		return "", err
-	}
-	return string(s), nil
+// Marshal returns the JSON encoding of an Order
+func (r *Order) Marshal() ([]byte, error) {
+	return json.Marshal(r)
 }
 
+// UnmarshalOrder parses the JSON-encoded data and stores the result in a
+// Order object.
 func UnmarshalOrder(data string) (Order, error) {
 	var r Order
 	err := json.Unmarshal([]byte(data), &r)
 	return r, err
 }
 
+// OrderStatus represents the current status of an order and is sent
+// by the Order service
 type OrderStatus struct {
-	OrderID string        `json:"order_id"`
-	Payment PaymentStatus `json:"payment"`
-	Userid  string        `json:"userid"`
+	// OrderID uniquely represents an order
+	OrderID string `json:"order_id"`
+
+	// Payment is the data that is emitted by the payment service
+	Payment payment.PaymentData `json:"payment"`
+
+	// UserID is the unique representation of the user
+	UserID string `json:"userid"`
 }
 
-type PaymentStatus struct {
-	Amount        string `json:"amount"`
-	Message       string `json:"message"`
-	Success       string `json:"success"`
-	TransactionID string `json:"transactionID"`
-}
-
+// Marshal returns the JSON encoding of OrderStatus
 func (r *OrderStatus) Marshal() ([]byte, error) {
 	return json.Marshal(r)
-}
-
-// Response is the output message that the Lambda function receives from payment. It will be a JSON string payload.
-type PaymentResponse struct {
-	Success       bool   `json:"success"`
-	Status        int    `json:"status"`
-	Message       string `json:"message"`
-	Amount        string `json:"amount,omitempty"`
-	TransactionID string `json:"transactionID"`
-	OrderID       string `json:"orderID"`
-}
-
-func UnmarshalPaymentResponse(data []byte) (PaymentResponse, error) {
-	var r PaymentResponse
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-type ShipmentStatus struct {
-	TrackingNumber string `json:"trackingNumber"`
-	OrderNumber    string `json:"orderNumber"`
-	Status         string `json:"status"`
-}
-
-// UnmarshalShipment parses the JSON-encoded data and stores the result in a ShipmentStatus
-func UnmarshalShipment(data []byte) (ShipmentStatus, error) {
-	var r ShipmentStatus
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-// CreditcardValidatedEvent ...
-type CreditcardValidatedEvent struct {
-	Metadata Metadata                `json:"metadata"`
-	Data     CreditcardValidatedData `json:"data"`
-}
-
-// CreditcardValidatedData ...
-type CreditcardValidatedData struct {
-	Success       bool   `json:"success"`
-	Status        int    `json:"status"`
-	Message       string `json:"message"`
-	Amount        string `json:"amount,omitempty"`
-	TransactionID string `json:"transactionID"`
-	OrderID       string `json:"orderID"`
-}
-
-// UnmarshalCreditcardValidatedEvent ...
-func UnmarshalCreditcardValidatedEvent(data []byte) (CreditcardValidatedEvent, error) {
-	var r CreditcardValidatedEvent
-	err := json.Unmarshal(data, &r)
-	return r, err
-}
-
-// ShipmentUpdateEvent ...
-type ShipmentUpdateEvent struct {
-	Metadata Metadata       `json:"metadata"`
-	Data     ShipmentStatus `json:"data"`
-}
-
-// UnmarshalShipmentUpdateEvent ...
-func UnmarshalShipmentUpdateEvent(data []byte) (ShipmentUpdateEvent, error) {
-	var r ShipmentUpdateEvent
-	err := json.Unmarshal(data, &r)
-	return r, err
 }
