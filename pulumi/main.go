@@ -218,11 +218,11 @@ func main() {
 			return err
 		}
 
-		// All functions will have the same environment variables
+		// All functions will have the same environment variables, with the exception
+		// of the function name
 		variables := make(map[string]pulumi.StringInput)
 		variables["REGION"] = pulumi.String(lambdaConfig.Region)
 		variables["SENTRY_DSN"] = pulumi.String(lambdaConfig.SentryDSN)
-		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-payment", ctx.Stack()))
 		variables["VERSION"] = tags.Version
 		variables["STAGE"] = pulumi.String(ctx.Stack())
 		parts := strings.Split(lambdaConfig.DynamoARN, "/")
@@ -245,6 +245,7 @@ func main() {
 			Role:        role.Arn,
 			Tags:        pulumi.Map(tagMap),
 		}
+		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-all", ctx.Stack()))
 
 		function, err := lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-all", ctx.Stack()), functionArgs)
 		if err != nil {
@@ -351,6 +352,7 @@ func main() {
 			Role:        role.Arn,
 			Tags:        pulumi.Map(tagMap),
 		}
+		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-users", ctx.Stack()))
 
 		function, err = lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-users", ctx.Stack()), functionArgs)
 		if err != nil {
@@ -475,6 +477,7 @@ func main() {
 		}
 
 		variables["RESPONSEQUEUE"] = pulumi.String(lambdaConfig.PaymentRequestQueue)
+		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-sqs-add", ctx.Stack()))
 
 		environment = lambda.FunctionEnvironmentArgs{
 			Variables: pulumi.StringMap(variables),
@@ -615,7 +618,6 @@ func main() {
 
 		variables["REGION"] = pulumi.String(lambdaConfig.Region)
 		variables["SENTRY_DSN"] = pulumi.String(lambdaConfig.SentryDSN)
-		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-sqs-update", ctx.Stack()))
 		variables["VERSION"] = tags.Version
 		variables["STAGE"] = pulumi.String(ctx.Stack())
 
@@ -635,6 +637,7 @@ func main() {
 			Role:        role.Arn,
 			Tags:        pulumi.Map(tagMap),
 		}
+		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-sqs-update", ctx.Stack()))
 
 		function, err = lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-sqs-update", ctx.Stack()), functionArgs)
 		if err != nil {
@@ -721,7 +724,7 @@ func main() {
 		// Create the environment variables for the Lambda function
 		variables["REGION"] = pulumi.String(lambdaConfig.Region)
 		variables["SENTRY_DSN"] = pulumi.String(lambdaConfig.SentryDSN)
-		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-paorder-sqs-shipyment", ctx.Stack()))
+		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-sqs-shipment", ctx.Stack()))
 		variables["VERSION"] = tags.Version
 		variables["STAGE"] = pulumi.String(ctx.Stack())
 		variables["RESPONSEQUEUE"] = pulumi.String(lambdaConfig.ShipmentRequestQueue)
