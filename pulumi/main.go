@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/go/pulumi/config"
 	"github.com/retgits/pulumi-helpers/builder"
+	gw "github.com/retgits/pulumi-helpers/gateway"
 	"github.com/retgits/pulumi-helpers/sampolicies"
 )
 
@@ -99,45 +101,6 @@ func main() {
 
 		// Create a factory to get policies from
 		iamFactory := sampolicies.NewFactory().WithAccountID(genericConfig.AccountID).WithPartition("aws").WithRegion(genericConfig.Region)
-
-		// Create the API Gateway Policy
-		iamFactory.AddAssumeRoleLambda()
-		iamFactory.AddExecuteAPI()
-		policies, err := iamFactory.GetPolicyStatement()
-		if err != nil {
-			return err
-		}
-
-		// Create an API Gateway
-		gateway, err := apigateway.NewRestApi(ctx, "OrderService", &apigateway.RestApiArgs{
-			Name:        pulumi.String("OrderService"),
-			Description: pulumi.String("ACME Serverless Fitness Shop - Order"),
-			Tags:        pulumi.Map(tagMap),
-			Policy:      pulumi.String(policies),
-		})
-		if err != nil {
-			return err
-		}
-
-		// Create the parent resources in the API Gateway
-		orderResource, err := apigateway.NewResource(ctx, "OrderAPIResource", &apigateway.ResourceArgs{
-			RestApi:  gateway.ID(),
-			PathPart: pulumi.String("order"),
-			ParentId: gateway.RootResourceId,
-		})
-		if err != nil {
-			return err
-		}
-
-		// Create the parent resources in the API Gateway
-		orderAddResource, err := apigateway.NewResource(ctx, "OrderAddAPIResource", &apigateway.ResourceArgs{
-			RestApi:  gateway.ID(),
-			PathPart: pulumi.String("add"),
-			ParentId: orderResource.ID(),
-		})
-		if err != nil {
-			return err
-		}
 
 		// Lookup the DynamoDB table
 		dynamoTable, err := dynamodb.LookupTable(ctx, &dynamodb.LookupTableArgs{
@@ -241,54 +204,12 @@ func main() {
 			Tags:        pulumi.Map(tagMap),
 		}
 
-		function, err := lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-all", ctx.Stack()), functionArgs)
+		orderAllFunction, err := lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-all", ctx.Stack()), functionArgs)
 		if err != nil {
 			return err
 		}
 
-		// Create the parent resources in the API Gateway
-		resource, err := apigateway.NewResource(ctx, "OrderAllAPIResource", &apigateway.ResourceArgs{
-			RestApi:  gateway.ID(),
-			PathPart: pulumi.String("all"),
-			ParentId: orderResource.ID(),
-		})
-		if err != nil {
-			return err
-		}
-
-		_, err = apigateway.NewMethod(ctx, "OrderAllAPIGetMethod", &apigateway.MethodArgs{
-			HttpMethod:    pulumi.String("GET"),
-			Authorization: pulumi.String("NONE"),
-			RestApi:       gateway.ID(),
-			ResourceId:    resource.ID(),
-		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource}))
-		if err != nil {
-			return err
-		}
-
-		_, err = apigateway.NewIntegration(ctx, "OrderAllAPIIntegration", &apigateway.IntegrationArgs{
-			HttpMethod:            pulumi.String("GET"),
-			IntegrationHttpMethod: pulumi.String("POST"),
-			ResourceId:            resource.ID(),
-			RestApi:               gateway.ID(),
-			Type:                  pulumi.String("AWS_PROXY"),
-			Uri:                   function.InvokeArn,
-		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource, function}))
-		if err != nil {
-			return err
-		}
-
-		_, err = lambda.NewPermission(ctx, "OrderAllAPIPermission", &lambda.PermissionArgs{
-			Action:    pulumi.String("lambda:InvokeFunction"),
-			Function:  function.Name,
-			Principal: pulumi.String("apigateway.amazonaws.com"),
-			SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/GET/order/all", genericConfig.Region, genericConfig.AccountID, gateway.ID()),
-		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource, function}))
-		if err != nil {
-			return err
-		}
-
-		ctx.Export("lambda-order-all::Arn", function.Arn)
+		ctx.Export("lambda-order-all::Arn", orderAllFunction.Arn)
 
 		// Add OrderUsers function
 		roleArgs = &iam.RoleArgs{
@@ -340,62 +261,20 @@ func main() {
 			Tags:        pulumi.Map(tagMap),
 		}
 
-		function, err = lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-users", ctx.Stack()), functionArgs)
+		orderUsersFunction, err := lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-users", ctx.Stack()), functionArgs)
 		if err != nil {
 			return err
 		}
 
-		// Create the parent resources in the API Gateway
-		resource, err = apigateway.NewResource(ctx, "UserOrdersAPIResource", &apigateway.ResourceArgs{
-			RestApi:  gateway.ID(),
-			PathPart: pulumi.String("{userid}"),
-			ParentId: orderResource.ID(),
-		})
-		if err != nil {
-			return err
-		}
-
-		_, err = apigateway.NewMethod(ctx, "UserOrdersAPIGetMethod", &apigateway.MethodArgs{
-			HttpMethod:    pulumi.String("GET"),
-			Authorization: pulumi.String("NONE"),
-			RestApi:       gateway.ID(),
-			ResourceId:    resource.ID(),
-		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource}))
-		if err != nil {
-			return err
-		}
-
-		_, err = apigateway.NewIntegration(ctx, "UserOrdersAPIIntegration", &apigateway.IntegrationArgs{
-			HttpMethod:            pulumi.String("GET"),
-			IntegrationHttpMethod: pulumi.String("POST"),
-			ResourceId:            resource.ID(),
-			RestApi:               gateway.ID(),
-			Type:                  pulumi.String("AWS_PROXY"),
-			Uri:                   function.InvokeArn,
-		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource, function}))
-		if err != nil {
-			return err
-		}
-
-		_, err = lambda.NewPermission(ctx, "UserOrdersAPIPermission", &lambda.PermissionArgs{
-			Action:    pulumi.String("lambda:InvokeFunction"),
-			Function:  function.Name,
-			Principal: pulumi.String("apigateway.amazonaws.com"),
-			SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/GET/order/*", genericConfig.Region, genericConfig.AccountID, gateway.ID()),
-		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource, function}))
-		if err != nil {
-			return err
-		}
-
-		ctx.Export("lambda-order-users::Arn", function.Arn)
+		ctx.Export("lambda-order-users::Arn", orderUsersFunction.Arn)
 
 		// Add Order SQS Add function
 		// policyString is a policy template, derived from AWS SAM, to allow apps
 		// to connect to and execute command on Amazon DynamoDB and SQS
 		iamFactory.ClearPolicies()
 		iamFactory.AddDynamoDBCrudPolicy(dynamoTable.Name)
-		iamFactory.AddSQSSendMessagePolicy(paymentRequestQueue.Arn)
-		policies, err = iamFactory.GetPolicyStatement()
+		iamFactory.AddSQSSendMessagePolicy(paymentRequestQueue.Name)
+		policies, err := iamFactory.GetPolicyStatement()
 		if err != nil {
 			return err
 		}
@@ -450,54 +329,12 @@ func main() {
 			Tags:        pulumi.Map(tagMap),
 		}
 
-		function, err = lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-sqs-add", ctx.Stack()), functionArgs)
+		orderAddFunction, err := lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-sqs-add", ctx.Stack()), functionArgs)
 		if err != nil {
 			return err
 		}
 
-		// Create the parent resources in the API Gateway
-		resource, err = apigateway.NewResource(ctx, "AddOrderAPIResource", &apigateway.ResourceArgs{
-			RestApi:  gateway.ID(),
-			PathPart: pulumi.String("{userid}"),
-			ParentId: orderAddResource.ID(),
-		})
-		if err != nil {
-			return err
-		}
-
-		_, err = apigateway.NewMethod(ctx, "OrderAddAPIGetMethod", &apigateway.MethodArgs{
-			HttpMethod:    pulumi.String("POST"),
-			Authorization: pulumi.String("NONE"),
-			RestApi:       gateway.ID(),
-			ResourceId:    resource.ID(),
-		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource}))
-		if err != nil {
-			return err
-		}
-
-		_, err = apigateway.NewIntegration(ctx, "OrderAddAPIIntegration", &apigateway.IntegrationArgs{
-			HttpMethod:            pulumi.String("POST"),
-			IntegrationHttpMethod: pulumi.String("POST"),
-			ResourceId:            resource.ID(),
-			RestApi:               gateway.ID(),
-			Type:                  pulumi.String("AWS_PROXY"),
-			Uri:                   function.InvokeArn,
-		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource, function}))
-		if err != nil {
-			return err
-		}
-
-		_, err = lambda.NewPermission(ctx, "OrderAddAPIPermission", &lambda.PermissionArgs{
-			Action:    pulumi.String("lambda:InvokeFunction"),
-			Function:  function.Name,
-			Principal: pulumi.String("apigateway.amazonaws.com"),
-			SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/POST/order/add/*", genericConfig.Region, genericConfig.AccountID, gateway.ID()),
-		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource, function}))
-		if err != nil {
-			return err
-		}
-
-		ctx.Export("lambda-order-sqs-add::Arn", function.Arn)
+		ctx.Export("lambda-order-sqs-add::Arn", orderAddFunction.Arn)
 
 		// Add Order SQS Ship function
 		roleArgs = &iam.RoleArgs{
@@ -521,7 +358,7 @@ func main() {
 
 		iamFactory.ClearPolicies()
 		iamFactory.AddDynamoDBCrudPolicy(dynamoTable.Name)
-		iamFactory.AddSQSPollerPolicy(shipmentResponseQueue.Arn)
+		iamFactory.AddSQSPollerPolicy(shipmentResponseQueue.Name)
 		policies, err = iamFactory.GetPolicyStatement()
 		if err != nil {
 			return err
@@ -554,22 +391,22 @@ func main() {
 			Tags:        pulumi.Map(tagMap),
 		}
 
-		function, err = lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-sqs-update", ctx.Stack()), functionArgs)
+		orderUpdateFunction, err := lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-sqs-update", ctx.Stack()), functionArgs)
 		if err != nil {
 			return err
 		}
 
-		_, err = lambda.NewEventSourceMapping(ctx, fmt.Sprintf("%s-lambda-payment", ctx.Stack()), &lambda.EventSourceMappingArgs{
+		_, err = lambda.NewEventSourceMapping(ctx, fmt.Sprintf("%s-lambda-order-sqs-update", ctx.Stack()), &lambda.EventSourceMappingArgs{
 			BatchSize:      pulumi.Int(1),
 			Enabled:        pulumi.Bool(true),
-			FunctionName:   function.Arn,
+			FunctionName:   orderUpdateFunction.Arn,
 			EventSourceArn: pulumi.String(shipmentResponseQueue.Arn),
 		})
 		if err != nil {
 			return err
 		}
 
-		ctx.Export("lambda-order-sqs-update::Arn", function.Arn)
+		ctx.Export("lambda-order-sqs-update::Arn", orderUpdateFunction.Arn)
 
 		// Add Order SQS Update function
 		// Create the IAM policy for the function.
@@ -594,8 +431,8 @@ func main() {
 
 		// Add a policy document to allow the function to use SQS as event source
 		iamFactory.ClearPolicies()
-		iamFactory.AddSQSSendMessagePolicy(shipmentRequestQueue.Arn)
-		iamFactory.AddSQSPollerPolicy(paymentResponseQueue.Arn)
+		iamFactory.AddSQSSendMessagePolicy(shipmentRequestQueue.Name)
+		iamFactory.AddSQSPollerPolicy(paymentResponseQueue.Name)
 		policies, err = iamFactory.GetPolicyStatement()
 		if err != nil {
 			return err
@@ -632,7 +469,7 @@ func main() {
 			Tags:        pulumi.Map(tagMap),
 		}
 
-		function, err = lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-sqs-ship", ctx.Stack()), functionArgs)
+		orderShipFunction, err := lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-sqs-ship", ctx.Stack()), functionArgs)
 		if err != nil {
 			return err
 		}
@@ -640,15 +477,119 @@ func main() {
 		_, err = lambda.NewEventSourceMapping(ctx, fmt.Sprintf("%s-lambda-order-sqs-ship", ctx.Stack()), &lambda.EventSourceMappingArgs{
 			BatchSize:      pulumi.Int(1),
 			Enabled:        pulumi.Bool(true),
-			FunctionName:   function.Arn,
+			FunctionName:   orderShipFunction.Arn,
 			EventSourceArn: pulumi.String(paymentResponseQueue.Arn),
 		})
 		if err != nil {
 			return err
 		}
 
-		ctx.Export("lambda-order-sqs-ship::Arn", function.Arn)
+		ctx.Export("lambda-order-sqs-ship::Arn", orderShipFunction.Arn)
 
+		// Create the API Gateway Policy
+		iamFactory.ClearPolicies()
+		iamFactory.AddAssumeRoleLambda()
+		iamFactory.AddExecuteAPI()
+		policies, err = iamFactory.GetPolicyStatement()
+		if err != nil {
+			return err
+		}
+
+		// Read the OpenAPI specification
+		bytes, err := ioutil.ReadFile("../api/openapi.json")
+		if err != nil {
+			return err
+		}
+
+		// Create an API Gateway
+		gateway, err := apigateway.NewRestApi(ctx, "OrderService", &apigateway.RestApiArgs{
+			Name:        pulumi.String("OrderService"),
+			Description: pulumi.String("ACME Serverless Fitness Shop - Order"),
+			Tags:        pulumi.Map(tagMap),
+			Policy:      pulumi.String(policies),
+			Body:        pulumi.StringPtr(string(bytes)),
+		})
+		if err != nil {
+			return err
+		}
+
+		gatewayURL := gateway.ID().ToStringOutput().ApplyString(func(id string) string {
+			resource := gw.MustGetGatewayResource(ctx, id, "/order/all")
+
+			_, err = apigateway.NewIntegration(ctx, "OrderAllAPIIntegration", &apigateway.IntegrationArgs{
+				HttpMethod:            pulumi.String("GET"),
+				IntegrationHttpMethod: pulumi.String("POST"),
+				ResourceId:            pulumi.String(resource.Id),
+				RestApi:               gateway.ID(),
+				Type:                  pulumi.String("AWS_PROXY"),
+				Uri:                   orderAllFunction.InvokeArn,
+			})
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			_, err = lambda.NewPermission(ctx, "OrderAllAPIPermission", &lambda.PermissionArgs{
+				Action:    pulumi.String("lambda:InvokeFunction"),
+				Function:  orderAllFunction.Name,
+				Principal: pulumi.String("apigateway.amazonaws.com"),
+				SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/GET/order/all", genericConfig.Region, genericConfig.AccountID, gateway.ID()),
+			})
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			resource = gw.MustGetGatewayResource(ctx, id, "/order/{userid}")
+
+			_, err = apigateway.NewIntegration(ctx, "UserOrdersAPIIntegration", &apigateway.IntegrationArgs{
+				HttpMethod:            pulumi.String("GET"),
+				IntegrationHttpMethod: pulumi.String("POST"),
+				ResourceId:            pulumi.String(resource.Id),
+				RestApi:               gateway.ID(),
+				Type:                  pulumi.String("AWS_PROXY"),
+				Uri:                   orderUsersFunction.InvokeArn,
+			})
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			_, err = lambda.NewPermission(ctx, "UserOrdersAPIPermission", &lambda.PermissionArgs{
+				Action:    pulumi.String("lambda:InvokeFunction"),
+				Function:  orderUsersFunction.Name,
+				Principal: pulumi.String("apigateway.amazonaws.com"),
+				SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/GET/order/*", genericConfig.Region, genericConfig.AccountID, gateway.ID()),
+			})
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			resource = gw.MustGetGatewayResource(ctx, id, "/order/add/{userid}")
+
+			_, err = apigateway.NewIntegration(ctx, "OrderAddAPIIntegration", &apigateway.IntegrationArgs{
+				HttpMethod:            pulumi.String("POST"),
+				IntegrationHttpMethod: pulumi.String("POST"),
+				ResourceId:            pulumi.String(resource.Id),
+				RestApi:               gateway.ID(),
+				Type:                  pulumi.String("AWS_PROXY"),
+				Uri:                   orderAddFunction.InvokeArn,
+			})
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			_, err = lambda.NewPermission(ctx, "OrderAddAPIPermission", &lambda.PermissionArgs{
+				Action:    pulumi.String("lambda:InvokeFunction"),
+				Function:  orderAddFunction.Name,
+				Principal: pulumi.String("apigateway.amazonaws.com"),
+				SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/POST/order/add/*", genericConfig.Region, genericConfig.AccountID, gateway.ID()),
+			})
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			return fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/prod/", id, genericConfig.Region)
+		})
+
+		ctx.Export("Gateway::URL", gatewayURL)
 		return nil
 	})
 }
