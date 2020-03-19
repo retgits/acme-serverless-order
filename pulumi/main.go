@@ -3,23 +3,17 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
-	"strings"
 
 	"github.com/pulumi/pulumi-aws/sdk/go/aws/apigateway"
+	"github.com/pulumi/pulumi-aws/sdk/go/aws/dynamodb"
 	"github.com/pulumi/pulumi-aws/sdk/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/go/aws/lambda"
+	"github.com/pulumi/pulumi-aws/sdk/go/aws/sqs"
 	"github.com/pulumi/pulumi/sdk/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/go/pulumi/config"
-)
-
-const (
-	// The shell to use
-	shell = "sh"
-
-	// The flag for the shell to read commands from a string
-	shellFlag = "-c"
+	"github.com/retgits/pulumi-helpers/builder"
+	"github.com/retgits/pulumi-helpers/sampolicies"
 )
 
 // Tags are key-value pairs to apply to the resources created by this stack
@@ -37,35 +31,26 @@ type Tags struct {
 	Version pulumi.String
 }
 
-// LambdaConfig contains the key-value pairs for the configuration of AWS Lambda in this stack
-type LambdaConfig struct {
+// GenericConfig contains the key-value pairs for the configuration of AWS in this stack
+type GenericConfig struct {
+	// The AWS region used
+	Region string
+
 	// The DSN used to connect to Sentry
 	SentryDSN string `json:"sentrydsn"`
 
-	// The ARN for the DynamoDB table
-	DynamoARN string `json:"dynamoarn"`
-
-	// The AWS region used
-	Region string `json:"region"`
-
-	// The AWS AccountID used
+	// The AWS AccountID to use
 	AccountID string `json:"accountid"`
-
-	// The SQS queue to send responses to
-	PaymentResponseQueue string `json:"paymentresponsequeue"`
-
-	// The SQS queue to receives messages from
-	PaymentRequestQueue string `json:"paymentrequestqueue"`
-
-	// The SQS queue to send responses to
-	ShipmentResponseQueue string `json:"shipmentresponsequeue"`
-
-	// The SQS queue to receives messages from
-	ShipmentRequestQueue string `json:"shipmentrequestqueue"`
 }
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
+		// Get the region
+		region, found := ctx.GetConfig("aws:region")
+		if !found {
+			return fmt.Errorf("region not found")
+		}
+
 		// Read the configuration data from Pulumi.<stack>.yaml
 		conf := config.New(ctx, "awsconfig")
 
@@ -73,9 +58,10 @@ func main() {
 		var tags Tags
 		conf.RequireObject("tags", &tags)
 
-		// Create a new DynamoConfig object with the data from the configuration
-		var lambdaConfig LambdaConfig
-		conf.RequireObject("lambda", &lambdaConfig)
+		// Create a new GenericConfig object with the data from the configuration
+		var genericConfig GenericConfig
+		conf.RequireObject("generic", &genericConfig)
+		genericConfig.Region = region
 
 		// Create a map[string]pulumi.Input of the tags
 		// the first four tags come from the configuration file
@@ -106,18 +92,20 @@ func main() {
 		for _, fnName := range functions {
 			// Find the working folder
 			fnFolder := path.Join(wd, "..", "cmd", fnName)
+			buildFactory := builder.NewFactory().WithFolder(fnFolder)
+			buildFactory.MustBuild()
+			buildFactory.MustZip()
+		}
 
-			// Run go build
-			if err := run(fnFolder, "GOOS=linux GOARCH=amd64 go build"); err != nil {
-				fmt.Printf("Error building code: %s", err.Error())
-				os.Exit(1)
-			}
+		// Create a factory to get policies from
+		iamFactory := sampolicies.NewFactory().WithAccountID(genericConfig.AccountID).WithPartition("aws").WithRegion(genericConfig.Region)
 
-			// Zip up the binary
-			if err := run(fnFolder, fmt.Sprintf("zip ./%s.zip ./%s", fnName, fnName)); err != nil {
-				fmt.Printf("Error creating zipfile: %s", err.Error())
-				os.Exit(1)
-			}
+		// Create the API Gateway Policy
+		iamFactory.AddAssumeRoleLambda()
+		iamFactory.AddExecuteAPI()
+		policies, err := iamFactory.GetPolicyStatement()
+		if err != nil {
+			return err
 		}
 
 		// Create an API Gateway
@@ -125,7 +113,7 @@ func main() {
 			Name:        pulumi.String("OrderService"),
 			Description: pulumi.String("ACME Serverless Fitness Shop - Order"),
 			Tags:        pulumi.Map(tagMap),
-			Policy:      pulumi.String(`{ "Version": "2012-10-17", "Statement": [ { "Action": "sts:AssumeRole", "Principal": { "Service": "lambda.amazonaws.com" }, "Effect": "Allow", "Sid": "" },{ "Action": "execute-api:Invoke", "Resource":"execute-api:/*", "Principal": "*", "Effect": "Allow", "Sid": "" } ] }`),
+			Policy:      pulumi.String(policies),
 		})
 		if err != nil {
 			return err
@@ -151,47 +139,54 @@ func main() {
 			return err
 		}
 
-		// dynamoCRUDPolicyString is a policy template, derived from AWS SAM, to allow apps
+		// Lookup the DynamoDB table
+		dynamoTable, err := dynamodb.LookupTable(ctx, &dynamodb.LookupTableArgs{
+			Name: fmt.Sprintf("%s-acmeserverless-dynamodb", ctx.Stack()),
+		})
+
+		// Lookup the SQS queues
+		paymentResponseQueue, err := sqs.LookupQueue(ctx, &sqs.LookupQueueArgs{
+			Name: fmt.Sprintf("%s-acmeserverless-sqs-payment-response", ctx.Stack()),
+		})
+		if err != nil {
+			return err
+		}
+
+		paymentRequestQueue, err := sqs.LookupQueue(ctx, &sqs.LookupQueueArgs{
+			Name: fmt.Sprintf("%s-acmeserverless-sqs-payment-request", ctx.Stack()),
+		})
+		if err != nil {
+			return err
+		}
+
+		shipmentResponseQueue, err := sqs.LookupQueue(ctx, &sqs.LookupQueueArgs{
+			Name: fmt.Sprintf("%s-acmeserverless-sqs-shipment-response", ctx.Stack()),
+		})
+		if err != nil {
+			return err
+		}
+
+		shipmentRequestQueue, err := sqs.LookupQueue(ctx, &sqs.LookupQueueArgs{
+			Name: fmt.Sprintf("%s-acmeserverless-sqs-shipment-request", ctx.Stack()),
+		})
+		if err != nil {
+			return err
+		}
+
+		// dynamoPolicy is a policy template, derived from AWS SAM, to allow apps
 		// to connect to and execute command on Amazon DynamoDB
-		dynamoCRUDPolicyString := fmt.Sprintf(`{
-			"Version": "2012-10-17",
-			"Statement": [
-				{
-					"Action": [
-						"dynamodb:GetItem",
-						"dynamodb:DeleteItem",
-						"dynamodb:PutItem",
-						"dynamodb:Scan",
-						"dynamodb:Query",
-						"dynamodb:UpdateItem",
-						"dynamodb:BatchWriteItem",
-						"dynamodb:BatchGetItem",
-						"dynamodb:DescribeTable",
-						"dynamodb:ConditionCheckItem"
-					],
-					"Effect": "Allow",
-					"Resource": "%s"
-				}
-			]
-		}`, lambdaConfig.DynamoARN)
+		iamFactory.ClearPolicies()
+		iamFactory.AddDynamoDBCrudPolicy(dynamoTable.Name)
+		dynamoPolicy, err := iamFactory.GetPolicyStatement()
+		if err != nil {
+			return err
+		}
 
 		// Add OrderAll function
 		roleArgs := &iam.RoleArgs{
-			AssumeRolePolicy: pulumi.String(`{
-				"Version": "2012-10-17",
-				"Statement": [
-				{
-					"Action": "sts:AssumeRole",
-					"Principal": {
-						"Service": "lambda.amazonaws.com"
-					},
-					"Effect": "Allow",
-					"Sid": ""
-				}
-				]
-			}`),
-			Description: pulumi.String("Role for the Order Service (lambda-order-all) of the ACME Serverless Fitness Shop"),
-			Tags:        pulumi.Map(tagMap),
+			AssumeRolePolicy: pulumi.String(sampolicies.AssumeRoleLambda()),
+			Description:      pulumi.String("Role for the Order Service (lambda-order-all) of the ACME Serverless Fitness Shop"),
+			Tags:             pulumi.Map(tagMap),
 		}
 
 		role, err := iam.NewRole(ctx, "ACMEServerlessOrderRole-lambda-order-all", roleArgs)
@@ -212,7 +207,7 @@ func main() {
 		_, err = iam.NewRolePolicy(ctx, "ACMEServerlessOrderPolicy-lambda-order-all", &iam.RolePolicyArgs{
 			Name:   pulumi.String("ACMEServerlessOrderPolicy-lambda-order-all"),
 			Role:   role.Name,
-			Policy: pulumi.String(dynamoCRUDPolicyString),
+			Policy: pulumi.String(dynamoPolicy),
 		})
 		if err != nil {
 			return err
@@ -221,13 +216,13 @@ func main() {
 		// All functions will have the same environment variables, with the exception
 		// of the function name
 		variables := make(map[string]pulumi.StringInput)
-		variables["REGION"] = pulumi.String(lambdaConfig.Region)
-		variables["SENTRY_DSN"] = pulumi.String(lambdaConfig.SentryDSN)
+		variables["REGION"] = pulumi.String(genericConfig.Region)
+		variables["SENTRY_DSN"] = pulumi.String(genericConfig.SentryDSN)
 		variables["VERSION"] = tags.Version
 		variables["STAGE"] = pulumi.String(ctx.Stack())
-		parts := strings.Split(lambdaConfig.DynamoARN, "/")
-		variables["TABLE"] = pulumi.String(parts[1])
+		variables["TABLE"] = pulumi.String(dynamoTable.Name)
 
+		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-all", ctx.Stack()))
 		environment := lambda.FunctionEnvironmentArgs{
 			Variables: pulumi.StringMap(variables),
 		}
@@ -245,7 +240,6 @@ func main() {
 			Role:        role.Arn,
 			Tags:        pulumi.Map(tagMap),
 		}
-		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-all", ctx.Stack()))
 
 		function, err := lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-all", ctx.Stack()), functionArgs)
 		if err != nil {
@@ -288,7 +282,7 @@ func main() {
 			Action:    pulumi.String("lambda:InvokeFunction"),
 			Function:  function.Name,
 			Principal: pulumi.String("apigateway.amazonaws.com"),
-			SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/GET/order/all", lambdaConfig.Region, lambdaConfig.AccountID, gateway.ID()),
+			SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/GET/order/all", genericConfig.Region, genericConfig.AccountID, gateway.ID()),
 		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource, function}))
 		if err != nil {
 			return err
@@ -298,21 +292,9 @@ func main() {
 
 		// Add OrderUsers function
 		roleArgs = &iam.RoleArgs{
-			AssumeRolePolicy: pulumi.String(`{
-				"Version": "2012-10-17",
-				"Statement": [
-				{
-					"Action": "sts:AssumeRole",
-					"Principal": {
-						"Service": "lambda.amazonaws.com"
-					},
-					"Effect": "Allow",
-					"Sid": ""
-				}
-				]
-			}`),
-			Description: pulumi.String("Role for the Order Service (lambda-order-users) of the ACME Serverless Fitness Shop"),
-			Tags:        pulumi.Map(tagMap),
+			AssumeRolePolicy: pulumi.String(sampolicies.AssumeRoleLambda()),
+			Description:      pulumi.String("Role for the Order Service (lambda-order-users) of the ACME Serverless Fitness Shop"),
+			Tags:             pulumi.Map(tagMap),
 		}
 
 		role, err = iam.NewRole(ctx, "ACMEServerlessOrderRole-lambda-order-users", roleArgs)
@@ -333,13 +315,18 @@ func main() {
 		_, err = iam.NewRolePolicy(ctx, "ACMEServerlessOrderPolicy-lambda-order-users", &iam.RolePolicyArgs{
 			Name:   pulumi.String("ACMEServerlessOrderPolicy-lambda-order-users"),
 			Role:   role.Name,
-			Policy: pulumi.String(dynamoCRUDPolicyString),
+			Policy: pulumi.String(dynamoPolicy),
 		})
 		if err != nil {
 			return err
 		}
 
 		// Create the All function
+		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-users", ctx.Stack()))
+		environment = lambda.FunctionEnvironmentArgs{
+			Variables: pulumi.StringMap(variables),
+		}
+
 		functionArgs = &lambda.FunctionArgs{
 			Description: pulumi.String("A Lambda function to get all orders for a user"),
 			Runtime:     pulumi.String("go1.x"),
@@ -352,7 +339,6 @@ func main() {
 			Role:        role.Arn,
 			Tags:        pulumi.Map(tagMap),
 		}
-		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-users", ctx.Stack()))
 
 		function, err = lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-users", ctx.Stack()), functionArgs)
 		if err != nil {
@@ -395,7 +381,7 @@ func main() {
 			Action:    pulumi.String("lambda:InvokeFunction"),
 			Function:  function.Name,
 			Principal: pulumi.String("apigateway.amazonaws.com"),
-			SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/GET/order/*", lambdaConfig.Region, lambdaConfig.AccountID, gateway.ID()),
+			SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/GET/order/*", genericConfig.Region, genericConfig.AccountID, gateway.ID()),
 		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource, function}))
 		if err != nil {
 			return err
@@ -406,50 +392,18 @@ func main() {
 		// Add Order SQS Add function
 		// policyString is a policy template, derived from AWS SAM, to allow apps
 		// to connect to and execute command on Amazon DynamoDB and SQS
-		policyString := fmt.Sprintf(`{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Action": [
-				"dynamodb:GetItem",
-				"dynamodb:DeleteItem",
-				"dynamodb:PutItem",
-				"dynamodb:Scan",
-				"dynamodb:Query",
-				"dynamodb:UpdateItem",
-				"dynamodb:BatchWriteItem",
-				"dynamodb:BatchGetItem",
-				"dynamodb:DescribeTable",
-				"dynamodb:ConditionCheckItem"
-			],
-			"Effect": "Allow",
-			"Resource": "%s"
-		},{
-			"Action": [
-				"sqs:SendMessage*"
-			],
-			"Effect": "Allow",
-			"Resource": "%s"
+		iamFactory.ClearPolicies()
+		iamFactory.AddDynamoDBCrudPolicy(dynamoTable.Name)
+		iamFactory.AddSQSSendMessagePolicy(paymentRequestQueue.Arn)
+		policies, err = iamFactory.GetPolicyStatement()
+		if err != nil {
+			return err
 		}
-	]
-}`, lambdaConfig.DynamoARN, lambdaConfig.PaymentRequestQueue)
 
 		roleArgs = &iam.RoleArgs{
-			AssumeRolePolicy: pulumi.String(`{
-		"Version": "2012-10-17",
-		"Statement": [
-		{
-			"Action": "sts:AssumeRole",
-			"Principal": {
-				"Service": "lambda.amazonaws.com"
-			},
-			"Effect": "Allow",
-			"Sid": ""
-		}
-		]
-	}`),
-			Description: pulumi.String("Role for the Order Service (lambda-order-sqs-add) of the ACME Serverless Fitness Shop"),
-			Tags:        pulumi.Map(tagMap),
+			AssumeRolePolicy: pulumi.String(sampolicies.AssumeRoleLambda()),
+			Description:      pulumi.String("Role for the Order Service (lambda-order-sqs-add) of the ACME Serverless Fitness Shop"),
+			Tags:             pulumi.Map(tagMap),
 		}
 
 		role, err = iam.NewRole(ctx, "ACMEServerlessOrderRole-lambda-order-sqs-add", roleArgs)
@@ -470,13 +424,13 @@ func main() {
 		_, err = iam.NewRolePolicy(ctx, "ACMEServerlessOrderPolicy-lambda-order-sqs-add", &iam.RolePolicyArgs{
 			Name:   pulumi.String("ACMEServerlessOrderPolicy-lambda-order-sqs-add"),
 			Role:   role.Name,
-			Policy: pulumi.String(policyString),
+			Policy: pulumi.String(policies),
 		})
 		if err != nil {
 			return err
 		}
 
-		variables["RESPONSEQUEUE"] = pulumi.String(lambdaConfig.PaymentRequestQueue)
+		variables["RESPONSEQUEUE"] = pulumi.String(paymentRequestQueue.Arn)
 		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-sqs-add", ctx.Stack()))
 
 		environment = lambda.FunctionEnvironmentArgs{
@@ -537,7 +491,7 @@ func main() {
 			Action:    pulumi.String("lambda:InvokeFunction"),
 			Function:  function.Name,
 			Principal: pulumi.String("apigateway.amazonaws.com"),
-			SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/POST/order/add/*", lambdaConfig.Region, lambdaConfig.AccountID, gateway.ID()),
+			SourceArn: pulumi.Sprintf("arn:aws:execute-api:%s:%s:%s/*/POST/order/add/*", genericConfig.Region, genericConfig.AccountID, gateway.ID()),
 		}, pulumi.DependsOn([]pulumi.Resource{gateway, resource, function}))
 		if err != nil {
 			return err
@@ -547,21 +501,9 @@ func main() {
 
 		// Add Order SQS Ship function
 		roleArgs = &iam.RoleArgs{
-			AssumeRolePolicy: pulumi.String(`{
-				"Version": "2012-10-17",
-				"Statement": [
-				{
-					"Action": "sts:AssumeRole",
-					"Principal": {
-						"Service": "lambda.amazonaws.com"
-					},
-					"Effect": "Allow",
-					"Sid": ""
-				}
-				]
-			}`),
-			Description: pulumi.String("Role for the Order Service (lambda-order-sqs-update) of the ACME Serverless Fitness Shop"),
-			Tags:        pulumi.Map(tagMap),
+			AssumeRolePolicy: pulumi.String(sampolicies.AssumeRoleLambda()),
+			Description:      pulumi.String("Role for the Order Service (lambda-order-sqs-update) of the ACME Serverless Fitness Shop"),
+			Tags:             pulumi.Map(tagMap),
 		}
 
 		role, err = iam.NewRole(ctx, "ACMEServerlessOrderRole-lambda-order-sqs-update", roleArgs)
@@ -577,50 +519,24 @@ func main() {
 			return err
 		}
 
-		policyString = fmt.Sprintf(`{
-			"Version": "2012-10-17",
-			"Statement": [
-				{
-					"Action": [
-						"dynamodb:GetItem",
-						"dynamodb:DeleteItem",
-						"dynamodb:PutItem",
-						"dynamodb:Scan",
-						"dynamodb:Query",
-						"dynamodb:UpdateItem",
-						"dynamodb:BatchWriteItem",
-						"dynamodb:BatchGetItem",
-						"dynamodb:DescribeTable",
-						"dynamodb:ConditionCheckItem"
-					],
-					"Effect": "Allow",
-					"Resource": "%s"
-				},{
-					"Action": [
-						"sqs:ReceiveMessage",
-						"sqs:DeleteMessage",
-						"sqs:GetQueueAttributes"
-					],
-					"Effect": "Allow",
-					"Resource": "%s"
-				}
-			]
-		}`, lambdaConfig.DynamoARN, lambdaConfig.ShipmentResponseQueue)
+		iamFactory.ClearPolicies()
+		iamFactory.AddDynamoDBCrudPolicy(dynamoTable.Name)
+		iamFactory.AddSQSPollerPolicy(shipmentResponseQueue.Arn)
+		policies, err = iamFactory.GetPolicyStatement()
+		if err != nil {
+			return err
+		}
 
 		_, err = iam.NewRolePolicy(ctx, "ACMEServerlessOrderSQSPolicy-lambda-order-sqs-update", &iam.RolePolicyArgs{
 			Name:   pulumi.String("ACMEServerlessPaymentSQSPolicy-lambda-order-sqs-update"),
 			Role:   role.Name,
-			Policy: pulumi.String(policyString),
+			Policy: pulumi.String(policies),
 		})
 		if err != nil {
 			return err
 		}
 
-		variables["REGION"] = pulumi.String(lambdaConfig.Region)
-		variables["SENTRY_DSN"] = pulumi.String(lambdaConfig.SentryDSN)
-		variables["VERSION"] = tags.Version
-		variables["STAGE"] = pulumi.String(ctx.Stack())
-
+		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-sqs-update", ctx.Stack()))
 		environment = lambda.FunctionEnvironmentArgs{
 			Variables: pulumi.StringMap(variables),
 		}
@@ -637,7 +553,6 @@ func main() {
 			Role:        role.Arn,
 			Tags:        pulumi.Map(tagMap),
 		}
-		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-sqs-update", ctx.Stack()))
 
 		function, err = lambda.NewFunction(ctx, fmt.Sprintf("%s-lambda-order-sqs-update", ctx.Stack()), functionArgs)
 		if err != nil {
@@ -648,7 +563,7 @@ func main() {
 			BatchSize:      pulumi.Int(1),
 			Enabled:        pulumi.Bool(true),
 			FunctionName:   function.Arn,
-			EventSourceArn: pulumi.String(lambdaConfig.ShipmentResponseQueue),
+			EventSourceArn: pulumi.String(shipmentResponseQueue.Arn),
 		})
 		if err != nil {
 			return err
@@ -659,21 +574,9 @@ func main() {
 		// Add Order SQS Update function
 		// Create the IAM policy for the function.
 		roleArgs = &iam.RoleArgs{
-			AssumeRolePolicy: pulumi.String(`{
-		"Version": "2012-10-17",
-		"Statement": [
-		{
-			"Action": "sts:AssumeRole",
-			"Principal": {
-				"Service": "lambda.amazonaws.com"
-			},
-			"Effect": "Allow",
-			"Sid": ""
-		}
-		]
-	}`),
-			Description: pulumi.String("Role for the Order Service (lambda-order-sqs-ship) of the ACME Serverless Fitness Shop"),
-			Tags:        pulumi.Map(tagMap),
+			AssumeRolePolicy: pulumi.String(sampolicies.AssumeRoleLambda()),
+			Description:      pulumi.String("Role for the Order Service (lambda-order-sqs-ship) of the ACME Serverless Fitness Shop"),
+			Tags:             pulumi.Map(tagMap),
 		}
 
 		role, err = iam.NewRole(ctx, "ACMEServerlessOrderRole-lambda-order-sqs-ship", roleArgs)
@@ -690,44 +593,26 @@ func main() {
 		}
 
 		// Add a policy document to allow the function to use SQS as event source
-		policyString = fmt.Sprintf(`{
-		"Version": "2012-10-17",
-		"Statement": [
-			{
-				"Action": [
-					"sqs:SendMessage*"
-				],
-				"Effect": "Allow",
-				"Resource": "%s"
-			},
-			{
-				"Action": [
-					"sqs:ReceiveMessage",
-					"sqs:DeleteMessage",
-					"sqs:GetQueueAttributes"
-				],
-				"Effect": "Allow",
-				"Resource": "%s"
-			}
-		]
-	}`, lambdaConfig.ShipmentRequestQueue, lambdaConfig.PaymentResponseQueue)
+		iamFactory.ClearPolicies()
+		iamFactory.AddSQSSendMessagePolicy(shipmentRequestQueue.Arn)
+		iamFactory.AddSQSPollerPolicy(paymentResponseQueue.Arn)
+		policies, err = iamFactory.GetPolicyStatement()
+		if err != nil {
+			return err
+		}
 
 		_, err = iam.NewRolePolicy(ctx, "ACMEServerlessPaymentSQSPolicy-lambda-order-sqs-ship", &iam.RolePolicyArgs{
 			Name:   pulumi.String("ACMEServerlessPaymentSQSPolicy-lambda-order-sqs-ship"),
 			Role:   role.Name,
-			Policy: pulumi.String(policyString),
+			Policy: pulumi.String(policies),
 		})
 		if err != nil {
 			return err
 		}
 
 		// Create the environment variables for the Lambda function
-		variables["REGION"] = pulumi.String(lambdaConfig.Region)
-		variables["SENTRY_DSN"] = pulumi.String(lambdaConfig.SentryDSN)
 		variables["FUNCTION_NAME"] = pulumi.String(fmt.Sprintf("%s-lambda-order-sqs-shipment", ctx.Stack()))
-		variables["VERSION"] = tags.Version
-		variables["STAGE"] = pulumi.String(ctx.Stack())
-		variables["RESPONSEQUEUE"] = pulumi.String(lambdaConfig.ShipmentRequestQueue)
+		variables["RESPONSEQUEUE"] = pulumi.String(shipmentRequestQueue.Arn)
 
 		environment = lambda.FunctionEnvironmentArgs{
 			Variables: pulumi.StringMap(variables),
@@ -756,7 +641,7 @@ func main() {
 			BatchSize:      pulumi.Int(1),
 			Enabled:        pulumi.Bool(true),
 			FunctionName:   function.Arn,
-			EventSourceArn: pulumi.String(lambdaConfig.PaymentResponseQueue),
+			EventSourceArn: pulumi.String(paymentResponseQueue.Arn),
 		})
 		if err != nil {
 			return err
@@ -766,14 +651,4 @@ func main() {
 
 		return nil
 	})
-}
-
-// run creates a Cmd struct to execute the named program with the given arguments.
-// After that, it starts the specified command and waits for it to complete.
-func run(folder string, args string) error {
-	cmd := exec.Command(shell, shellFlag, args)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Dir = folder
-	return cmd.Run()
 }
