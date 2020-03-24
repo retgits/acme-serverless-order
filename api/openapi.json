@@ -38,25 +38,6 @@
       }
     },
     "/order/add/{userid}": {
-      "get": {
-        "summary": "Add order",
-        "parameters": [
-          {
-            "name": "userid",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {}
-          }
-        }
-      },
       "post": {
         "summary": "Add order",
         "parameters": [
