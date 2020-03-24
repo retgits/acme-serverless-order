@@ -106,6 +106,12 @@ func main() {
 		dynamoTable, err := dynamodb.LookupTable(ctx, &dynamodb.LookupTableArgs{
 			Name: fmt.Sprintf("%s-acmeserverless-dynamodb", ctx.Stack()),
 		})
+		if err != nil {
+			return err
+		}
+		if dynamoTable == nil {
+			return fmt.Errorf("unable to find dynamodb table %s-acmeserverless-dynamodb", ctx.Stack())
+		}
 
 		// Lookup the SQS queues
 		paymentResponseQueue, err := sqs.LookupQueue(ctx, &sqs.LookupQueueArgs{
