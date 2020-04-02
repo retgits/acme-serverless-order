@@ -13,6 +13,7 @@ import (
 	"github.com/retgits/acme-serverless-order/internal/emitter/sqs"
 	payment "github.com/retgits/acme-serverless-payment"
 	shipment "github.com/retgits/acme-serverless-shipment"
+	wflambda "github.com/wavefronthq/wavefront-lambda-go"
 )
 
 func handler(request events.SQSEvent) error {
@@ -82,5 +83,5 @@ func handler(request events.SQSEvent) error {
 
 // The main method is executed by AWS Lambda and points to the handler
 func main() {
-	lambda.Start(handler)
+	lambda.Start(wflambda.Wrapper(handler))
 }

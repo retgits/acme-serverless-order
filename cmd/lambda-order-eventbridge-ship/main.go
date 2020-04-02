@@ -13,6 +13,7 @@ import (
 	"github.com/retgits/acme-serverless-order/internal/emitter/eventbridge"
 	payment "github.com/retgits/acme-serverless-payment"
 	shipment "github.com/retgits/acme-serverless-shipment"
+	wflambda "github.com/wavefronthq/wavefront-lambda-go"
 )
 
 // handler handles the EventBridge events and returns an error if anything goes wrong.
@@ -84,5 +85,5 @@ func handler(request json.RawMessage) error {
 
 // The main method is executed by AWS Lambda and points to the handler
 func main() {
-	lambda.Start(handler)
+	lambda.Start(wflambda.Wrapper(handler))
 }
