@@ -5,14 +5,13 @@
 package emitter
 
 import (
-	payment "github.com/retgits/acme-serverless-payment"
-	shipment "github.com/retgits/acme-serverless-shipment"
+	acmeserverless "github.com/retgits/acme-serverless"
 )
 
 // EventEmitter is the interface that describes the methods the
 // eventing service needs to implement to be able to work with
 // the ACME Serverless Fitness Shop.
 type EventEmitter interface {
-	SendPaymentRequestedEvent(e payment.PaymentRequested) error
-	SendShipmentRequestedEvent(e shipment.ShipmentRequested) error
+	SendPaymentRequestedEvent(e acmeserverless.PaymentRequestedEvent) error
+	SendShipmentRequestedEvent(e acmeserverless.ShipmentRequested) error
 }

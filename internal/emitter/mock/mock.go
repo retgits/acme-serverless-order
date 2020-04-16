@@ -7,9 +7,8 @@ package mock
 import (
 	"log"
 
+	acmeserverless "github.com/retgits/acme-serverless"
 	"github.com/retgits/acme-serverless-order/internal/emitter"
-	payment "github.com/retgits/acme-serverless-payment"
-	shipment "github.com/retgits/acme-serverless-shipment"
 )
 
 // responder is an empty struct that implements the methods of the
@@ -22,7 +21,7 @@ func New() emitter.EventEmitter {
 	return responder{}
 }
 
-func (r responder) SendPaymentRequestedEvent(e payment.PaymentRequested) error {
+func (r responder) SendPaymentRequestedEvent(e acmeserverless.PaymentRequestedEvent) error {
 	payload, err := e.Marshal()
 	if err != nil {
 		return err
@@ -33,7 +32,7 @@ func (r responder) SendPaymentRequestedEvent(e payment.PaymentRequested) error {
 	return nil
 }
 
-func (r responder) SendShipmentRequestedEvent(e shipment.ShipmentRequested) error {
+func (r responder) SendShipmentRequestedEvent(e acmeserverless.ShipmentRequested) error {
 	payload, err := e.Marshal()
 	if err != nil {
 		return err

@@ -11,9 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/gofrs/uuid"
-	order "github.com/retgits/acme-serverless-order"
+	acmeserverless "github.com/retgits/acme-serverless"
 	"github.com/retgits/acme-serverless-order/internal/datastore"
-	shipment "github.com/retgits/acme-serverless-shipment"
 )
 
 // The pointer to DynamoDB provides the API operation methods for making requests to Amazon DynamoDB.
@@ -46,7 +45,7 @@ func New() datastore.Manager {
 }
 
 // AddOrder stores a new order in Amazon DynamoDB
-func (m manager) AddOrder(o order.Order) (order.Order, error) {
+func (m manager) AddOrder(o acmeserverless.Order) (acmeserverless.Order, error) {
 	// Generate and assign a new orderID
 	o.OrderID = uuid.Must(uuid.NewV4()).String()
 	o.Status = aws.String("Pending Payment")
@@ -91,7 +90,7 @@ func (m manager) AddOrder(o order.Order) (order.Order, error) {
 }
 
 // AllOrders retrieves all orders from DynamoDB
-func (m manager) AllOrders() (order.Orders, error) {
+func (m manager) AllOrders() (acmeserverless.Orders, error) {
 	// Create a map of DynamoDB Attribute Values containing the table keys
 	// for the access pattern PK = ORDER
 	km := make(map[string]*dynamodb.AttributeValue)
@@ -111,11 +110,11 @@ func (m manager) AllOrders() (order.Orders, error) {
 		return nil, err
 	}
 
-	orders := make(order.Orders, len(qo.Items))
+	orders := make(acmeserverless.Orders, len(qo.Items))
 
 	for idx, ord := range qo.Items {
 		str := ord["OrderString"].S
-		o, err := order.UnmarshalOrder(*str)
+		o, err := acmeserverless.UnmarshalOrder(*str)
 		if err != nil {
 			log.Println(fmt.Sprintf("error unmarshalling order data: %s", err.Error()))
 			continue
@@ -127,7 +126,7 @@ func (m manager) AllOrders() (order.Orders, error) {
 }
 
 // UserOrders retrieves orders for a single user from DynamoDB based on the userID
-func (m manager) UserOrders(userID string) (order.Orders, error) {
+func (m manager) UserOrders(userID string) (acmeserverless.Orders, error) {
 	// Create a map of DynamoDB Attribute Values containing the table keys
 	// for the access pattern PK = USER KeyID = ID
 	km := make(map[string]*dynamodb.AttributeValue)
@@ -149,14 +148,14 @@ func (m manager) UserOrders(userID string) (order.Orders, error) {
 	// Execute the DynamoDB query
 	qo, err := dbs.Query(qi)
 	if err != nil {
-		return order.Orders{}, err
+		return acmeserverless.Orders{}, err
 	}
 
-	orders := make(order.Orders, len(qo.Items))
+	orders := make(acmeserverless.Orders, len(qo.Items))
 
 	for idx, ord := range qo.Items {
 		str := ord["Payload"].S
-		o, err := order.UnmarshalOrder(*str)
+		o, err := acmeserverless.UnmarshalOrder(*str)
 		if err != nil {
 			log.Println(fmt.Sprintf("error unmarshalling order data: %s", err.Error()))
 			continue
@@ -168,7 +167,7 @@ func (m manager) UserOrders(userID string) (order.Orders, error) {
 }
 
 // UpdateStatus sets thew new OrderStatus for a specific order
-func (m manager) UpdateStatus(s shipment.ShipmentData) (order.Order, error) {
+func (m manager) UpdateStatus(s acmeserverless.ShipmentData) (acmeserverless.Order, error) {
 	// Create a map of DynamoDB Attribute Values containing the table keys
 	// for the access pattern PK = ORDER SK = ID
 	km := make(map[string]*dynamodb.AttributeValue)
@@ -188,14 +187,14 @@ func (m manager) UpdateStatus(s shipment.ShipmentData) (order.Order, error) {
 
 	qo, err := dbs.Query(qi)
 	if err != nil {
-		return order.Order{}, err
+		return acmeserverless.Order{}, err
 	}
 
 	// Create an order struct from the data
 	str := *qo.Items[0]["Payload"].S
-	ord, err := order.UnmarshalOrder(str)
+	ord, err := acmeserverless.UnmarshalOrder(str)
 	if err != nil {
-		return order.Order{}, err
+		return acmeserverless.Order{}, err
 	}
 
 	ord.Status = &s.Status
@@ -221,8 +220,8 @@ func (m manager) UpdateStatus(s shipment.ShipmentData) (order.Order, error) {
 
 	uio, err := dbs.UpdateItem(uii)
 	if err != nil {
-		return order.Order{}, fmt.Errorf("error updating dynamodb: %s", err.Error())
+		return acmeserverless.Order{}, fmt.Errorf("error updating dynamodb: %s", err.Error())
 	}
 
-	return order.UnmarshalOrder(*uio.Attributes["OrderString"].S)
+	return acmeserverless.UnmarshalOrder(*uio.Attributes["OrderString"].S)
 }

@@ -11,10 +11,9 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/getsentry/sentry-go"
 	"github.com/gofrs/uuid"
-	order "github.com/retgits/acme-serverless-order"
+	acmeserverless "github.com/retgits/acme-serverless"
 	"github.com/retgits/acme-serverless-order/internal/datastore/dynamodb"
 	"github.com/retgits/acme-serverless-order/internal/emitter/sqs"
-	payment "github.com/retgits/acme-serverless-payment"
 	wflambda "github.com/wavefronthq/wavefront-lambda-go"
 )
 
@@ -41,7 +40,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	headers["Access-Control-Allow-Origin"] = "*"
 
 	// Update the order with an OrderID
-	ord, err := order.UnmarshalOrder(request.Body)
+	ord, err := acmeserverless.UnmarshalOrder(request.Body)
 	if err != nil {
 		return handleError("unmarshal", headers, err)
 	}
@@ -53,14 +52,14 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		return handleError("store", headers, err)
 	}
 
-	prEvent := payment.PaymentRequested{
-		Metadata: payment.Metadata{
-			Domain: order.Domain,
+	prEvent := acmeserverless.PaymentRequestedEvent{
+		Metadata: acmeserverless.Metadata{
+			Domain: acmeserverless.OrderDomain,
 			Source: "AddOrder",
-			Type:   payment.PaymentRequestedEvent,
-			Status: "success",
+			Type:   acmeserverless.PaymentRequestedEventName,
+			Status: acmeserverless.DefaultSuccessStatus,
 		},
-		Data: payment.PaymentRequest{
+		Data: acmeserverless.PaymentRequestDetails{
 			OrderID: ord.OrderID,
 			Card:    ord.Card,
 			Total:   ord.Total,
@@ -69,10 +68,10 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 	// Send a breadcrumb to Sentry with the payment request
 	sentry.AddBreadcrumb(&sentry.Breadcrumb{
-		Category:  payment.PaymentRequestedEvent,
+		Category:  acmeserverless.PaymentRequestedEventName,
 		Timestamp: time.Now().Unix(),
 		Level:     sentry.LevelInfo,
-		Data:      prEvent.Data.ToMap(),
+		Data:      acmeserverless.ToSentryMap(prEvent.Data),
 	})
 
 	em := sqs.New()
@@ -81,10 +80,10 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 		return handleError("request payment", headers, err)
 	}
 
-	status := order.OrderStatus{
+	status := acmeserverless.OrderStatus{
 		OrderID: ord.OrderID,
 		UserID:  ord.UserID,
-		Payment: payment.PaymentData{
+		Payment: acmeserverless.CreditCardValidationDetails{
 			Message: "pending payment",
 			Success: false,
 		},
@@ -92,10 +91,10 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 
 	// Send a breadcrumb to Sentry with the shipment request
 	sentry.AddBreadcrumb(&sentry.Breadcrumb{
-		Category:  payment.PaymentRequestedEvent,
+		Category:  acmeserverless.PaymentRequestedEventName,
 		Timestamp: time.Now().Unix(),
 		Level:     sentry.LevelInfo,
-		Data:      status.Payment.ToMap(),
+		Data:      acmeserverless.ToSentryMap(status.Payment),
 	})
 
 	payload, err := status.Marshal()

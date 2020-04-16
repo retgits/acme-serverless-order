@@ -8,11 +8,9 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/getsentry/sentry-go"
-	order "github.com/retgits/acme-serverless-order"
+	acmeserverless "github.com/retgits/acme-serverless"
 	"github.com/retgits/acme-serverless-order/internal/datastore/dynamodb"
 	"github.com/retgits/acme-serverless-order/internal/emitter/sqs"
-	payment "github.com/retgits/acme-serverless-payment"
-	shipment "github.com/retgits/acme-serverless-shipment"
 	wflambda "github.com/wavefronthq/wavefront-lambda-go"
 )
 
@@ -28,13 +26,13 @@ func handler(request events.SQSEvent) error {
 		Environment: os.Getenv("STAGE"),
 	})
 
-	req, err := payment.UnmarshalCreditCardValidated([]byte(request.Records[0].Body))
+	req, err := acmeserverless.UnmarshalCreditCardValidatedEvent([]byte(request.Records[0].Body))
 	if err != nil {
 		sentry.CaptureException(fmt.Errorf("error unmarshalling creditcard validated event: %s", err.Error()))
 		return err
 	}
 
-	shipmentStatus := shipment.ShipmentData{
+	shipmentStatus := acmeserverless.ShipmentData{
 		OrderNumber: req.Data.OrderID,
 		Status:      req.Data.Message,
 	}
@@ -49,24 +47,24 @@ func handler(request events.SQSEvent) error {
 
 	if req.Data.Success {
 		em := sqs.New()
-		evt := shipment.ShipmentRequested{
-			Metadata: shipment.Metadata{
-				Domain: order.Domain,
+		evt := acmeserverless.ShipmentRequested{
+			Metadata: acmeserverless.Metadata{
+				Domain: acmeserverless.OrderDomain,
 				Source: "ShipOrder",
-				Type:   shipment.ShipmentRequestedEvent,
+				Type:   acmeserverless.ShipmentRequestedEventName,
 				Status: "success",
 			},
-			Data: shipment.ShipmentRequest{
+			Data: acmeserverless.ShipmentRequest{
 				OrderID:  req.Data.OrderID,
 				Delivery: ord.Delivery,
 			},
 		}
 
 		sentry.AddBreadcrumb(&sentry.Breadcrumb{
-			Category:  shipment.ShipmentRequestedEvent,
+			Category:  acmeserverless.ShipmentRequestedEventName,
 			Timestamp: time.Now().Unix(),
 			Level:     sentry.LevelInfo,
-			Data:      evt.Data.ToMap(),
+			Data:      acmeserverless.ToSentryMap(evt.Data),
 		})
 
 		err = em.SendShipmentRequestedEvent(evt)

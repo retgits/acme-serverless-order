@@ -8,8 +8,8 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/getsentry/sentry-go"
+	acmeserverless "github.com/retgits/acme-serverless"
 	"github.com/retgits/acme-serverless-order/internal/datastore/dynamodb"
-	shipment "github.com/retgits/acme-serverless-shipment"
 	wflambda "github.com/wavefronthq/wavefront-lambda-go"
 )
 
@@ -25,7 +25,7 @@ func handler(request events.SQSEvent) error {
 		Environment: os.Getenv("STAGE"),
 	})
 
-	req, err := shipment.UnmarshalShipmentSent([]byte(request.Records[0].Body))
+	req, err := acmeserverless.UnmarshalShipmentSent([]byte(request.Records[0].Body))
 	if err != nil {
 		sentry.CaptureException(fmt.Errorf("error unmarshalling shipment update event: %s", err.Error()))
 		return err

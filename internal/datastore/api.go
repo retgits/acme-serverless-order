@@ -5,16 +5,15 @@
 package datastore
 
 import (
-	order "github.com/retgits/acme-serverless-order"
-	shipment "github.com/retgits/acme-serverless-shipment"
+	acmeserverless "github.com/retgits/acme-serverless"
 )
 
 // Manager is the interface that describes the methods the
 // data store needs to implement to be able to work with
 // the ACME Serverless Fitness Shop.
 type Manager interface {
-	AddOrder(o order.Order) (order.Order, error)
-	AllOrders() (order.Orders, error)
-	UserOrders(userID string) (order.Orders, error)
-	UpdateStatus(s shipment.ShipmentData) (order.Order, error)
+	AddOrder(o acmeserverless.Order) (acmeserverless.Order, error)
+	AllOrders() (acmeserverless.Orders, error)
+	UserOrders(userID string) (acmeserverless.Orders, error)
+	UpdateStatus(s acmeserverless.ShipmentData) (acmeserverless.Order, error)
 }
