@@ -69,7 +69,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	// Send a breadcrumb to Sentry with the payment request
 	sentry.AddBreadcrumb(&sentry.Breadcrumb{
 		Category:  acmeserverless.PaymentRequestedEventName,
-		Timestamp: time.Now().Unix(),
+		Timestamp: time.Now(),
 		Level:     sentry.LevelInfo,
 		Data:      acmeserverless.ToSentryMap(prEvent.Data),
 	})
@@ -92,7 +92,7 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	// Send a breadcrumb to Sentry with the shipment request
 	sentry.AddBreadcrumb(&sentry.Breadcrumb{
 		Category:  acmeserverless.PaymentRequestedEventName,
-		Timestamp: time.Now().Unix(),
+		Timestamp: time.Now(),
 		Level:     sentry.LevelInfo,
 		Data:      acmeserverless.ToSentryMap(status.Payment),
 	})

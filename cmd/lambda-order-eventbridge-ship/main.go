@@ -63,7 +63,7 @@ func handler(request json.RawMessage) error {
 
 		sentry.AddBreadcrumb(&sentry.Breadcrumb{
 			Category:  acmeserverless.ShipmentRequestedEventName,
-			Timestamp: time.Now().Unix(),
+			Timestamp: time.Now(),
 			Level:     sentry.LevelInfo,
 			Data:      acmeserverless.ToSentryMap(evt.Data),
 		})
