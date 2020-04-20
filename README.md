@@ -2,7 +2,7 @@
 
 > An order service, because what is a shop without actual orders to be shipped?
 
-The Shipping service is part of the [ACME Fitness Serverless Shop](https://github.com/retgits/acme-serverless). The goal of this specific service is to interact with the catalog, front-end, and make calls to the order services.
+The Order service is part of the [ACME Fitness Serverless Shop](https://github.com/retgits/acme-serverless). The goal of this specific service is to interact with the catalog, front-end, and make calls to the order services.
 
 ## Prerequisites
 
