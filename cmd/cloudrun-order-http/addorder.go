@@ -66,6 +66,7 @@ func AddOrder(ctx *fasthttp.RequestCtx) {
 	}
 
 	req.Header.Add("content-type", "application/json")
+	req.Header.Add("host", os.Getenv("PAYMENT_HOST"))
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -104,13 +105,14 @@ func AddOrder(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	req, err = http.NewRequest("POST", os.Getenv("SHIPPING_URL"), bytes.NewReader(payload))
+	req, err = http.NewRequest("POST", os.Getenv("SHIPMENT_URL"), bytes.NewReader(payload))
 	if err != nil {
 		ErrorHandler(ctx, "AddOrder", "NewRequest", err)
 		return
 	}
 
 	req.Header.Add("content-type", "application/json")
+	req.Header.Add("host", os.Getenv("SHIPMENT_HOST"))
 
 	_, err = http.DefaultClient.Do(req)
 	if err != nil {
